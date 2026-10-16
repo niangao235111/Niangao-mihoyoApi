@@ -55,7 +55,7 @@ public class MihoyoGameAccountClient {
         var tokenClient =
                 new PassportClientBuilder()
                         .endpoint(properties.getPassportEndpoint())
-                        .httpClient(transport.create(device, converted, false, null))
+                        .httpClient(transport.createReadOnly("stoken_to_ltoken", device, converted, false, 262144, headers -> {}))
                         .httpRetryOptions(SdkTransport.noRetries())
                         .httpRedirectOptions(SdkTransport.noRedirects())
                         .httpInstrumentationOptions(SdkTransport.noLogs())
@@ -64,7 +64,7 @@ public class MihoyoGameAccountClient {
             tokenClient.getLTokenBySToken(CookieUtil.stoken(stoken, stuid, mid));
         } catch (RuntimeException ex) {
             if (converted.getBody() == null)
-                throw new BusinessException(502, "SToken 转换请求异常；未自动重试");
+                throw ReadOnlyRetry.failure("stoken_to_ltoken", ex);
         }
         JsonObject token = data(converted, "stoken_to_ltoken");
         String ltoken = ProtocolJsonUtil.optional(token, "ltoken");
@@ -81,7 +81,7 @@ public class MihoyoGameAccountClient {
         var roleClient =
                 new GameAccountClientBuilder()
                         .endpoint(properties.getBindingEndpoint())
-                        .httpClient(transport.create(device, bound, true, null))
+                        .httpClient(transport.createReadOnly("binding_roles", device, bound, true, 262144, headers -> {}))
                         .httpRetryOptions(SdkTransport.noRetries())
                         .httpRedirectOptions(SdkTransport.noRedirects())
                         .httpInstrumentationOptions(SdkTransport.noLogs())
@@ -90,7 +90,7 @@ public class MihoyoGameAccountClient {
         try {
             roleClient.getRoles(CookieUtil.ltoken(ltoken, stuid, mid), ds, null);
         } catch (RuntimeException ex) {
-            if (bound.getBody() == null) throw new BusinessException(502, "关联游戏账号请求异常；未自动重试");
+            if (bound.getBody() == null) throw ReadOnlyRetry.failure("binding_roles", ex);
         }
         JsonObject result = data(bound, "binding_roles");
         if (!result.has("list") || !result.get("list").isJsonArray())

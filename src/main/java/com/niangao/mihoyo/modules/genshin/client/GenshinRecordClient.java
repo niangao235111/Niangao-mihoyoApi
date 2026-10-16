@@ -8,6 +8,7 @@ import com.niangao.mihoyo.modules.genshin.util.GenshinChannels;
 import com.niangao.mihoyo.modules.genshin.service.GenshinDeviceService;
 import com.niangao.mihoyo.modules.mihoyo.client.MihoyoGameAccountClient;
 import com.niangao.mihoyo.modules.mihoyo.client.SdkTransport;
+import com.niangao.mihoyo.modules.mihoyo.client.ReadOnlyRetry;
 import com.niangao.mihoyo.modules.mihoyo.client.model.UpstreamReply;
 import com.niangao.mihoyo.modules.mihoyo.util.CookieUtil;
 import com.niangao.mihoyo.modules.mihoyo.util.ProtocolJsonUtil;
@@ -99,7 +100,7 @@ public class GenshinRecordClient {
     private JsonObject call(String stage, GenshinDeviceService.Device device, String challenge, Consumer<GenshinRecordApiClient> operation) {
         long started = System.nanoTime();
         var reply = new UpstreamReply();
-        var http = transport.create(device.id(), reply, true, null, 4 * 1024 * 1024, headers -> {
+        var http = transport.createReadOnly(stage, device.id(), reply, true, 4 * 1024 * 1024, headers -> {
             headers.set(HttpHeaderName.USER_AGENT, properties.getUserAgent());
             headers.set(HttpHeaderName.ORIGIN, "https://webstatic.mihoyo.com");
             headers.set(HttpHeaderName.REFERER, "https://webstatic.mihoyo.com/");
@@ -120,8 +121,7 @@ public class GenshinRecordClient {
             if (reply.getBody() == null) {
                 log.warn("原神战绩请求失败 stage={}, http_status={}, error_type={}, elapsed_ms={}",
                         stage, reply.getHttpStatus(), ex.getClass().getSimpleName(), elapsed(started));
-                throw new BusinessException(502, "原神战绩请求异常；未自动重试",
-                        Map.of("stage", stage, "http_status", reply.getHttpStatus()));
+                throw ReadOnlyRetry.failure(stage, ex);
             }
         }
         try { SdkTransport.validateReply(reply); }

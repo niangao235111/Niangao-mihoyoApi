@@ -13,7 +13,9 @@
 - 拒绝未知JSON字段、非法类型、缺失必填字段。API请求体最大16 KiB，超限413。
 - `/api/` 返回 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`。
 - 时间为ISO 8601 UTC，例如 `2026-10-16T01:02:03Z`；数据库DATETIME统一按UTC读写，页面按本地时区显示。
-- 上游不自动重试、不自动跳转；网络错误或风控不应通过循环调用、反复发短信处理。
+- 上游不自动跳转。仅凭证读取、关联账号及原神总览/角色/装备只读查询，在连接超时、连接中断等网络错误时最多额外重试2次，间隔250ms、500ms；同一次网页请求的只读阶段共享45秒预算，单次连接最多5秒。HTTP错误响应、业务拒绝/风控、无效JSON或证书校验失败不会触发自动重试。
+- 短信发送、验证码提交、人工验证任务创建和验证结果提交均不自动重试。短信/登录结果不明时先调用`login/status`确认；状态读取失败应保留当前页面会话并阻止重复提交。已获取的凭证在连接失败后仅暂存页面内存，用户可点击重新连接；刷新页面会丢失这份暂存。
+- 网络错误的`data`包含`stage`和`reason=upstream_network_error`；只读重试耗尽时还包含`retry_count`（额外重试次数，最多2）。阶段包括`login_sms`、`login_verify`、`stoken_to_ltoken`、`binding_roles`、`genshin_overview`、`genshin_characters`、`genshin_equipment`。非JSON代理错误页应按HTTP状态和当前操作提示，不应统一显示为未知服务错误。
 
 ### 1.1 身份和有效期
 

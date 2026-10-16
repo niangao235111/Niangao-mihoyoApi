@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.EnumSet;
 
-/** SDK HTTP 适配：固定头、有限响应、禁用自动重试/跳转/敏感请求日志。 */
+/** SDK HTTP 适配：固定头、有限响应；仅显式只读调用允许有限网络重试。 */
 @Component
 public class SdkTransport {
     private final MihoyoProperties properties;
@@ -47,15 +47,31 @@ public class SdkTransport {
     /** 在公共头之后设置业务所需的最终请求头，避免战绩头被通用关联查询头覆盖。 */
     public HttpClient create(String deviceId, UpstreamReply capture, boolean binding, String proof, int maxBytes,
             java.util.function.Consumer<HttpHeaders> customize) {
+        return create(deviceId, capture, binding, proof, maxBytes, customize, null);
+    }
+
+    public HttpClient createReadOnly(String stage, String deviceId, UpstreamReply capture, boolean binding,
+            int maxBytes, java.util.function.Consumer<HttpHeaders> customize) {
+        return request -> {
+            // SDK 的只读查询也可能使用 POST；先物化请求体，确保每次重放使用完整相同字节。
+            if (request.getBody() != null) request.setBody(BinaryData.fromBytes(request.getBody().toBytes()));
+            return ReadOnlyRetry.execute(stage, remaining ->
+                    create(deviceId, capture, binding, null, maxBytes, customize, remaining).send(request));
+        };
+    }
+
+    private HttpClient create(String deviceId, UpstreamReply capture, boolean binding, String proof, int maxBytes,
+            java.util.function.Consumer<HttpHeaders> customize, Duration remaining) {
         if (maxBytes < 1 || maxBytes > 4 * 1024 * 1024) {
             throw new IllegalArgumentException("Invalid response limit");
         }
-        HttpClient delegate =
-                new JdkHttpClientBuilder()
-                        .connectionTimeout(properties.getConnectTimeout())
-                        .responseTimeout(properties.getResponseTimeout())
-                        .readTimeout(properties.getResponseTimeout())
-                        .build();
+        Duration connect = properties.getConnectTimeout(), responseTimeout = properties.getResponseTimeout();
+        if (remaining != null) {
+            // 获取响应和读取流均受超时限制，分别分配剩余预算，避免串行等待超过预算。
+            responseTimeout = minimum(responseTimeout, remaining.dividedBy(2));
+            connect = minimum(connect, minimum(responseTimeout, Duration.ofSeconds(5)));
+        }
+        HttpClient delegate = buildDelegate(connect, responseTimeout);
         return request -> {
             request.getHeaders()
                     .set(
@@ -76,7 +92,9 @@ public class SdkTransport {
             customize.accept(request.getHeaders());
             // JDK 根据实际 BodyPublisher 生成长度；它本来也会忽略 SDK 手工设置的此头。
             request.getHeaders().remove(HttpHeaderName.fromString("Content-Length"));
-            Response<BinaryData> response = delegate.send(request);
+            Response<BinaryData> response;
+            try { response = delegate.send(request); }
+            catch (RuntimeException ex) { throw ReadOnlyRetry.failure("upstream", ex); }
             capture.setHttpStatus(response.getStatusCode());
             capture.setTraceId(response.getHeaders().getValue(HttpHeaderName.fromString("x-trace-id")));
             capture.setAigis(
@@ -104,12 +122,21 @@ public class SdkTransport {
             } catch (BusinessException ex) {
                 throw ex;
             } catch (Exception ex) {
+                if (ReadOnlyRetry.isNetworkFailure(ex))
+                    throw new BusinessException(502, "上游响应读取超时或网络中断",
+                            java.util.Map.of("reason", "upstream_network_error"));
                 throw new BusinessException(502, "无法读取上游响应");
             } finally {
                 response.close();
             }
         };
     }
+
+    protected HttpClient buildDelegate(Duration connect, Duration response) {
+        return new JdkHttpClientBuilder().connectionTimeout(connect).responseTimeout(response).readTimeout(response).build();
+    }
+
+    private static Duration minimum(Duration a, Duration b) { return a.compareTo(b) < 0 ? a : b; }
 
     /** 关闭 SDK 自动重试，避免网络超时时重复发短信或重复提交验证码。 */
     public static HttpRetryOptions noRetries() {

@@ -54,7 +54,7 @@ public class MihoyoPassportClient {
                                         session.getActionType(), area, captcha, mobile));
         } catch (RuntimeException ex) {
             // SDK 对 token 对象的模型可能不兼容，使用已抓取 JSON 继续按业务协议校验。
-            if (reply.getBody() == null) throw new BusinessException(502, "上游网络或解码异常；未自动重试");
+            if (reply.getBody() == null) throw ReadOnlyRetry.failure(operation == LoginOperation.SMS ? "login_sms" : "login_verify", ex);
         }
         SdkTransport.validateReply(reply);
         return reply;

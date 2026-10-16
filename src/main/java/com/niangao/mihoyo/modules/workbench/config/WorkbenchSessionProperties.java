@@ -25,7 +25,8 @@ public class WorkbenchSessionProperties {
     private String keyPrefix = "niangao:workbench";
     private String encryptionKey = "";
     private boolean cookieSecure = false;
-    private List<String> allowedOrigins = List.of("http://127.0.0.1:5173", "http://localhost:5173");
+    private List<String> allowedOrigins = List.of("http://127.0.0.1:5173", "http://localhost:5173",
+            "http://127.0.0.1:4321", "http://localhost:4321");
 
     @AssertTrue(message = "工作台会话期限必须为正数，且空闲期限不能大于绝对期限")
     public boolean isTimingValid() {
