@@ -1,0 +1,159 @@
+### 所有示例均为占位值；点击具体请求才执行，短信请求可能发送真实短信。
+@base = http://127.0.0.1:17892
+@origin = http://127.0.0.1:5173
+@session_id = replace-login-session
+@csrf = replace-csrf-token
+@cookie = replace-cookie-token
+@stoken = replace-authorized-stoken
+@stuid = 123456
+@mid = replace-authorized-mid
+@uid = 506005588
+@region = cn_qd01
+@verification_id = 00000000-0000-4000-8000-000000000000
+
+### 1 创建短信流程，不发送短信
+POST {{base}}/api/mihoyo/login/start
+Content-Type: application/json
+
+{"mobile":"13800000000","area_code":"+86"}
+
+### 2 发送真实短信：本人需要时才执行；验证码任务结果以文档为准
+POST {{base}}/api/mihoyo/login/sms
+Content-Type: application/json
+
+{"session_id":"{{session_id}}"}
+
+### 3 提交短信验证码
+POST {{base}}/api/mihoyo/login/verify
+Content-Type: application/json
+
+{"session_id":"{{session_id}}","captcha":"123456"}
+
+### 4 查询短信流程
+POST {{base}}/api/mihoyo/login/status
+Content-Type: application/json
+
+{"session_id":"{{session_id}}"}
+
+### 5 删除短信流程
+POST {{base}}/api/mihoyo/login/delete
+Content-Type: application/json
+
+{"session_id":"{{session_id}}"}
+
+### 6 无状态账号查询
+POST {{base}}/api/mihoyo/game/accounts
+Content-Type: application/json
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}"}
+
+### 7 无状态总览，不保存数据库
+POST {{base}}/api/genshin/overview
+Content-Type: application/json
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}","game_uid":"{{uid}}","game_biz":"hk4e_cn","region":"{{region}}"}
+
+### 8 无状态角色列表
+POST {{base}}/api/genshin/characters
+Content-Type: application/json
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}","game_uid":"{{uid}}","game_biz":"hk4e_cn","region":"{{region}}"}
+
+### 9 无状态装备详情
+POST {{base}}/api/genshin/characters/details
+Content-Type: application/json
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}","game_uid":"{{uid}}","game_biz":"hk4e_cn","region":"{{region}}","character_ids":["10000089"]}
+
+### 10 创建工作台会话；从Set-Cookie取得Cookie，data.csrf_token取得CSRF
+POST {{base}}/api/workbench/session
+Content-Type: application/json
+Origin: {{origin}}
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}"}
+
+### 11 恢复工作台会话
+GET {{base}}/api/workbench/session
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+
+### 12 续期
+POST {{base}}/api/workbench/session/renew
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{}
+
+### 13 退出
+POST {{base}}/api/workbench/session/logout
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{}
+
+### 14 用服务端凭证重新查询绑定账号
+POST {{base}}/api/workbench/game/accounts
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{}
+
+### 15 实时总览并保存
+POST {{base}}/api/workbench/genshin/overview
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"game_uid":"{{uid}}","game_biz":"hk4e_cn","region":"{{region}}"}
+
+### 16 实时角色列表并保存
+POST {{base}}/api/workbench/genshin/characters
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"game_uid":"{{uid}}","game_biz":"hk4e_cn","region":"{{region}}"}
+
+### 17 实时装备并保存
+POST {{base}}/api/workbench/genshin/characters/details
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"game_uid":"{{uid}}","game_biz":"hk4e_cn","region":"{{region}}","character_ids":["10000089"]}
+
+### 18 只读已保存档案及最近10条查询记录，不请求米游社
+POST {{base}}/api/workbench/genshin/saved
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"game_uid":"{{uid}}","game_biz":"hk4e_cn","region":"{{region}}"}
+
+### 19 档案受阻后创建GT3任务
+POST {{base}}/api/workbench/genshin/verification/start
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"game_uid":"{{uid}}","game_biz":"hk4e_cn","region":"{{region}}"}
+
+### 20 提交本人完成的GT3验证；结果不可复用
+POST {{base}}/api/workbench/genshin/verification/submit
+Content-Type: application/json
+Origin: {{origin}}
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"verification_id":"{{verification_id}}","geetest_challenge":"replace-with-manual-result","geetest_validate":"replace-with-manual-result","geetest_seccode":"replace-with-manual-result"}

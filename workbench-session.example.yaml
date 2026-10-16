@@ -1,0 +1,10 @@
+# 部署配置样例；32 字节随机值的 Base64 从环境变量注入，不提交真实密钥。
+workbench:
+  session:
+    idle-ttl: 7d
+    absolute-ttl: 30d
+    encryption-key: ${WORKBENCH_ENCRYPTION_KEY:}
+    # HTTPS 正式入口必须设置为 true；本地 HTTP 调试使用 false。
+    cookie-secure: true
+    allowed-origins:
+      - https://your-workbench.example

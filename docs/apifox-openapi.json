@@ -1,0 +1,510 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Niangao Mihoyo 后端 API",
+    "version": "0.1.0",
+    "description": "米哈游登录凭证获取与关联原神账号查询接口。\n\n- 统一响应 Result<T>：code / message / data，code 与 HTTP 状态码一致。\n- 字段命名 snake_case；响应中 null 字段不序列化。\n- 手机号、验证码、凭证均为字符串，禁止隐式类型转换。"
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:17892", "description": "本地开发" }
+  ],
+  "tags": [
+    { "name": "登录流程", "description": "米哈游短信登录：创建会话、发短信、验证、查询、删除" },
+    { "name": "游戏账号", "description": "查询该通行证关联的原神账号" }
+  ],
+  "paths": {
+    "/api/mihoyo/login/start": {
+      "post": {
+        "tags": ["登录流程"],
+        "summary": "创建短信流程会话",
+        "description": "创建米哈游短信登录流程会话，不发送短信。仅支持大陆手机号 +86。",
+        "operationId": "loginStart",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StartLoginRequest" },
+              "example": { "mobile": "13800138000", "area_code": "+86" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "会话创建成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResultLoginResponse" },
+                "example": {
+                  "code": 200,
+                  "message": "成功",
+                  "data": { "session_id": "uuid", "state": "CREATED", "expires_in": 600, "retry_after": 0 }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "500": { "$ref": "#/components/responses/Error500" }
+        }
+      }
+    },
+    "/api/mihoyo/login/sms": {
+      "post": {
+        "tags": ["登录流程"],
+        "summary": "发送或复用验证码",
+        "description": "发送短信验证码，可能返回人机验证任务（state 为 SMS_CHALLENGE 时需先完成人机验证再带 geetest_result 重试）。",
+        "operationId": "loginSms",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendSmsRequest" },
+              "example": {
+                "session_id": "uuid",
+                "geetest_result": {
+                  "geetest_challenge": "challenge",
+                  "geetest_validate": "validate",
+                  "geetest_seccode": "seccode"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "短信已发送或返回人机验证任务",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResultLoginResponse" },
+                "example": {
+                  "code": 200,
+                  "message": "成功",
+                  "data": {
+                    "session_id": "uuid",
+                    "state": "SMS_SENT",
+                    "expires_in": 580,
+                    "retry_after": 60,
+                    "sent_new": true,
+                    "message": "短信已发送，请输入收到的验证码"
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "409": { "$ref": "#/components/responses/Error409" },
+          "410": { "$ref": "#/components/responses/Error410" },
+          "422": { "$ref": "#/components/responses/Error422" },
+          "429": { "$ref": "#/components/responses/Error429" },
+          "500": { "$ref": "#/components/responses/Error500" },
+          "502": { "$ref": "#/components/responses/Error502" }
+        }
+      }
+    },
+    "/api/mihoyo/login/verify": {
+      "post": {
+        "tags": ["登录流程"],
+        "summary": "提交验证码取得米哈游凭证",
+        "description": "提交短信验证码，取得米哈游凭证（stoken 等）。凭证仅在本次响应返回，不写入会话。",
+        "operationId": "loginVerify",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VerifyLoginRequest" },
+              "example": {
+                "session_id": "uuid",
+                "captcha": "123456",
+                "geetest_result": {
+                  "geetest_challenge": "challenge",
+                  "geetest_validate": "validate",
+                  "geetest_seccode": "seccode"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功，返回米哈游凭证",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResultLoginResponse" },
+                "example": {
+                  "code": 200,
+                  "message": "成功",
+                  "data": {
+                    "session_id": "uuid",
+                    "state": "LOGGED_IN",
+                    "expires_in": 500,
+                    "retry_after": 0,
+                    "message": "登录成功，凭证仅在本次响应返回，不写入文件",
+                    "credentials": {
+                      "credential_type": "stoken",
+                      "stoken": "STOKEN_VALUE",
+                      "stuid": "12345678",
+                      "mid": "mid_value",
+                      "login_ticket": "login_ticket_value"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "409": { "$ref": "#/components/responses/Error409" },
+          "410": { "$ref": "#/components/responses/Error410" },
+          "422": { "$ref": "#/components/responses/Error422" },
+          "429": { "$ref": "#/components/responses/Error429" },
+          "500": { "$ref": "#/components/responses/Error500" },
+          "502": { "$ref": "#/components/responses/Error502" }
+        }
+      }
+    },
+    "/api/mihoyo/login/status": {
+      "post": {
+        "tags": ["登录流程"],
+        "summary": "查询流程状态",
+        "description": "查询流程状态，不返回凭证。",
+        "operationId": "loginStatus",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SessionRequest" },
+              "example": { "session_id": "uuid" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "流程状态",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResultLoginResponse" },
+                "example": {
+                  "code": 200,
+                  "message": "成功",
+                  "data": { "session_id": "uuid", "state": "SMS_SENT", "expires_in": 580, "retry_after": 30 }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "410": { "$ref": "#/components/responses/Error410" },
+          "500": { "$ref": "#/components/responses/Error500" }
+        }
+      }
+    },
+    "/api/mihoyo/login/delete": {
+      "post": {
+        "tags": ["登录流程"],
+        "summary": "清除流程会话",
+        "description": "清除流程会话，不撤销米哈游凭证。",
+        "operationId": "loginDelete",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SessionRequest" },
+              "example": { "session_id": "uuid" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "会话已清除",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResultMessageResponse" },
+                "example": { "code": 200, "message": "成功", "data": { "message": "会话已清除" } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "410": { "$ref": "#/components/responses/Error410" },
+          "500": { "$ref": "#/components/responses/Error500" }
+        }
+      }
+    },
+    "/api/mihoyo/game/accounts": {
+      "post": {
+        "tags": ["游戏账号"],
+        "summary": "查询关联原神账号",
+        "description": "查询该通行证关联的原神账号（SToken 转 LToken 后查询）。game_biz 可选，仅支持 hk4e_cn / hk4e_bilibili。",
+        "operationId": "gameAccounts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GameAccountsRequest" },
+              "example": {
+                "stoken": "STOKEN_VALUE",
+                "stuid": "12345678",
+                "mid": "mid_value",
+                "game_biz": "hk4e_cn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "原神账号列表",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResultGameAccountsResponse" },
+                "example": {
+                  "code": 200,
+                  "message": "成功",
+                  "data": {
+                    "auth_flow": "stoken_to_ltoken_to_roles",
+                    "count": 1,
+                    "list": [
+                      {
+                        "game_biz": "hk4e_cn",
+                        "game_uid": "100000001",
+                        "region": "cn_gf01",
+                        "region_name": "天空岛",
+                        "nickname": "旅行者",
+                        "level": 60,
+                        "game_name": "原神",
+                        "is_chosen": true,
+                        "is_official": true
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "500": { "$ref": "#/components/responses/Error500" },
+          "502": { "$ref": "#/components/responses/Error502" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ResultLoginResponse": {
+        "type": "object",
+        "required": ["code", "message", "data"],
+        "properties": {
+          "code": { "type": "integer", "format": "int32", "example": 200 },
+          "message": { "type": "string", "example": "成功" },
+          "data": { "$ref": "#/components/schemas/LoginResponse" }
+        }
+      },
+      "ResultMessageResponse": {
+        "type": "object",
+        "required": ["code", "message", "data"],
+        "properties": {
+          "code": { "type": "integer", "format": "int32", "example": 200 },
+          "message": { "type": "string", "example": "成功" },
+          "data": { "$ref": "#/components/schemas/MessageResponse" }
+        }
+      },
+      "ResultGameAccountsResponse": {
+        "type": "object",
+        "required": ["code", "message", "data"],
+        "properties": {
+          "code": { "type": "integer", "format": "int32", "example": 200 },
+          "message": { "type": "string", "example": "成功" },
+          "data": { "$ref": "#/components/schemas/GameAccountsResponse" }
+        }
+      },
+      "ResultError": {
+        "type": "object",
+        "required": ["code", "message", "data"],
+        "properties": {
+          "code": { "type": "integer", "format": "int32" },
+          "message": { "type": "string" },
+          "data": { "nullable": true, "type": "object" }
+        }
+      },
+      "StartLoginRequest": {
+        "type": "object",
+        "required": ["mobile"],
+        "properties": {
+          "mobile": { "type": "string", "description": "大陆手机号，正则 1[3-9][0-9]{9}", "example": "13800138000" },
+          "area_code": { "type": "string", "description": "区号，仅支持 +86，可省略", "example": "+86" }
+        }
+      },
+      "SendSmsRequest": {
+        "type": "object",
+        "required": ["session_id"],
+        "properties": {
+          "session_id": { "type": "string", "example": "uuid" },
+          "geetest_result": { "$ref": "#/components/schemas/GeetestResult" }
+        }
+      },
+      "VerifyLoginRequest": {
+        "type": "object",
+        "required": ["session_id", "captcha"],
+        "properties": {
+          "session_id": { "type": "string", "example": "uuid" },
+          "captcha": { "type": "string", "description": "4～8 位数字验证码，正则 [0-9]{4,8}", "example": "123456" },
+          "geetest_result": { "$ref": "#/components/schemas/GeetestResult" }
+        }
+      },
+      "SessionRequest": {
+        "type": "object",
+        "required": ["session_id"],
+        "properties": {
+          "session_id": { "type": "string", "example": "uuid" }
+        }
+      },
+      "GameAccountsRequest": {
+        "type": "object",
+        "required": ["stoken", "stuid", "mid"],
+        "properties": {
+          "stoken": { "type": "string", "description": "SToken，最长 8192", "example": "STOKEN_VALUE" },
+          "stuid": { "type": "string", "description": "通行证 ID，1～20 位数字，正则 [0-9]{1,20}", "example": "12345678" },
+          "mid": { "type": "string", "description": "mid，最长 8192", "example": "mid_value" },
+          "game_biz": { "type": "string", "description": "渠道，可选 hk4e_cn / hk4e_bilibili", "example": "hk4e_cn" },
+          "ds": { "type": "string", "description": "DS 签名头，格式 [0-9]+,[a-z0-9]+,[0-9a-f]{32}", "example": "" }
+        }
+      },
+      "GeetestResult": {
+        "type": "object",
+        "description": "极验 GT3/GT4 人机验证结果。GT3 用 geetest_* 三个字段，GT4 用 captcha_id / lot_number / pass_token / gen_time / captcha_output。",
+        "properties": {
+          "geetest_challenge": { "type": "string" },
+          "geetest_validate": { "type": "string" },
+          "geetest_seccode": { "type": "string" },
+          "captcha_id": { "type": "string" },
+          "lot_number": { "type": "string" },
+          "pass_token": { "type": "string" },
+          "gen_time": { "type": "string" },
+          "captcha_output": { "type": "string" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "description": "各登录步骤共用的响应；null 字段不序列化，challenge 仅在待人机验证时返回。",
+        "properties": {
+          "session_id": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["CREATED", "SMS_CHALLENGE", "SMS_SENT", "LOGIN_CHALLENGE", "LOGGED_IN", "FAILED"]
+          },
+          "expires_in": { "type": "integer", "format": "int64", "description": "剩余有效秒数" },
+          "retry_after": { "type": "integer", "format": "int64", "description": "距下次可重发短信的秒数" },
+          "challenge": { "type": "object", "additionalProperties": true, "description": "人机验证任务，待验证时返回" },
+          "pending_operation": { "type": "string", "description": "待处理的验证操作类型" },
+          "aigis_session_id": { "type": "string" },
+          "verification_url": { "type": "string", "description": "人机验证页面地址，challenge 存在时返回" },
+          "sent_new": { "type": "boolean", "description": "短信是否为新发送" },
+          "message": { "type": "string" },
+          "credentials": { "$ref": "#/components/schemas/MihoyoCredentials" }
+        }
+      },
+      "MihoyoCredentials": {
+        "type": "object",
+        "description": "米哈游凭证，仅 verify 成功响应中出现。",
+        "properties": {
+          "credential_type": { "type": "string" },
+          "stoken": { "type": "string" },
+          "stuid": { "type": "string" },
+          "mid": { "type": "string" },
+          "login_ticket": { "type": "string" }
+        }
+      },
+      "MessageResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" }
+        }
+      },
+      "GameAccountsResponse": {
+        "type": "object",
+        "properties": {
+          "auth_flow": { "type": "string", "example": "stoken_to_ltoken_to_roles" },
+          "count": { "type": "integer", "format": "int32" },
+          "list": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/GameAccountVO" }
+          }
+        }
+      },
+      "GameAccountVO": {
+        "type": "object",
+        "properties": {
+          "game_biz": { "type": "string" },
+          "game_uid": { "type": "string" },
+          "region": { "type": "string" },
+          "region_name": { "type": "string" },
+          "nickname": { "type": "string" },
+          "level": { "type": "integer", "format": "int32" },
+          "game_name": { "type": "string" },
+          "is_chosen": { "type": "boolean" },
+          "is_official": { "type": "boolean" }
+        }
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "请求参数不合法",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResultError" },
+            "example": { "code": 400, "message": "请求参数不合法，请检查必填字段和格式", "data": null }
+          }
+        }
+      },
+      "Error409": {
+        "description": "当前流程状态不允许该操作",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResultError" },
+            "example": { "code": 409, "message": "当前流程状态不允许发送短信", "data": null }
+          }
+        }
+      },
+      "Error410": {
+        "description": "会话过期或已删除",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResultError" },
+            "example": { "code": 410, "message": "Session expired or deleted", "data": null }
+          }
+        }
+      },
+      "Error422": {
+        "description": "上游拒绝或需人机验证",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResultError" },
+            "example": { "code": 422, "message": "Upstream rejected login operation", "data": { "upstream_retcode": -1 } }
+          }
+        }
+      },
+      "Error429": {
+        "description": "尝试次数已达上限",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResultError" },
+            "example": { "code": 429, "message": "短信尝试次数已达上限", "data": null }
+          }
+        }
+      },
+      "Error500": {
+        "description": "服务器处理异常",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResultError" },
+            "example": { "code": 500, "message": "服务器处理异常", "data": null }
+          }
+        }
+      },
+      "Error502": {
+        "description": "米哈游响应处理异常",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ResultError" },
+            "example": { "code": 502, "message": "米哈游响应处理异常；未自动重试", "data": null }
+          }
+        }
+      }
+    }
+  }
+}

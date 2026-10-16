@@ -1,0 +1,20 @@
+[Unit]
+Description=Niangao Mihoyo backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=niangao
+Group=niangao
+WorkingDirectory=/opt/niangao-mihoyo
+EnvironmentFile=/opt/niangao-mihoyo/config/backend.env
+ExecStart=/usr/bin/java -Xms128m -Xmx512m -jar /opt/niangao-mihoyo/app.jar --spring.profiles.active=production
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

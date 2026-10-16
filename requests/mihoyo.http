@@ -1,0 +1,44 @@
+### IDEA HTTP Client / Postman 联调示例（真实短信需由你主动运行发送请求）
+@baseUrl = http://127.0.0.1:17892
+@mobile = REPLACE_WITH_YOUR_PHONE
+@sessionId = REPLACE_WITH_START_RESPONSE
+@captcha = REPLACE_WITH_SMS_CODE
+@stoken = REPLACE_WITH_VERIFY_RESPONSE
+@stuid = REPLACE_WITH_VERIFY_RESPONSE
+@mid = REPLACE_WITH_VERIFY_RESPONSE
+
+### 1. 创建流程会话（不发短信）
+POST {{baseUrl}}/api/mihoyo/login/start
+Content-Type: application/json
+
+{"mobile":"{{mobile}}","area_code":"+86"}
+
+### 2. 发送短信；若触发人机验证，依据文档处理 challenge 后重试
+POST {{baseUrl}}/api/mihoyo/login/sms
+Content-Type: application/json
+
+{"session_id":"{{sessionId}}"}
+
+### 3. 提交验证码取得米哈游凭证
+POST {{baseUrl}}/api/mihoyo/login/verify
+Content-Type: application/json
+
+{"session_id":"{{sessionId}}","captcha":"{{captcha}}"}
+
+### 4. 查询关联原神账号
+POST {{baseUrl}}/api/mihoyo/game/accounts
+Content-Type: application/json
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}","game_biz":"hk4e_cn"}
+
+### 查询流程状态（不返回凭证）
+POST {{baseUrl}}/api/mihoyo/login/status
+Content-Type: application/json
+
+{"session_id":"{{sessionId}}"}
+
+### 清除流程会话（不撤销凭证，不退出网站用户）
+POST {{baseUrl}}/api/mihoyo/login/delete
+Content-Type: application/json
+
+{"session_id":"{{sessionId}}"}

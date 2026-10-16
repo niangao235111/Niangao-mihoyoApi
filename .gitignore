@@ -1,0 +1,21 @@
+target/
+.idea/
+*.iml
+logs/
+.local/
+.env
+*.log
+workbench/node_modules/
+workbench/dist/
+# 此Git仓库只发布后端；本机前端和前后端联合打包脚本不提交。
+/workbench/
+/scripts/package-release.ps1
+release/
+*.zip
+*.tar.gz
+deploy/backend.env
+deploy/application-production.yaml
+*.env
+*.key
+*.p12
+*.pfx

@@ -1,0 +1,21 @@
+### 在本地 HTTP Client 的私有变量中提供 stoken、stuid、mid；不要提交真实凭证。
+@baseUrl = http://127.0.0.1:17892
+@gameUid = 123456789
+
+### 账号总览
+POST {{baseUrl}}/api/genshin/overview
+Content-Type: application/json
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}","game_uid":"{{gameUid}}","game_biz":"hk4e_cn","region":"cn_gf01"}
+
+### 我的角色
+POST {{baseUrl}}/api/genshin/characters
+Content-Type: application/json
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}","game_uid":"{{gameUid}}","game_biz":"hk4e_cn","region":"cn_gf01"}
+
+### 装备详情（角色 ID 必须属于上述 UID，最多 40 个）
+POST {{baseUrl}}/api/genshin/characters/details
+Content-Type: application/json
+
+{"stoken":"{{stoken}}","stuid":"{{stuid}}","mid":"{{mid}}","game_uid":"{{gameUid}}","game_biz":"hk4e_cn","region":"cn_gf01","character_ids":["10000089"]}

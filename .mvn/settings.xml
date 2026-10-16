@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+    <!-- 覆盖本机旧 HTTP 镜像；不镜像项目内 bundled-uigf-sdk 文件仓库。 -->
+    <mirrors>
+        <mirror>
+            <id>central-https</id>
+            <mirrorOf>central</mirrorOf>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </mirror>
+    </mirrors>
+</settings>

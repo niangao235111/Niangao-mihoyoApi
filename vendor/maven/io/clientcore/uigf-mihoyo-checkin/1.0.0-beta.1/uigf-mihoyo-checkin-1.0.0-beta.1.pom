@@ -1,0 +1,5 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.clientcore</groupId><artifactId>uigf-mihoyo-checkin</artifactId><version>1.0.0-beta.1</version>
+  <licenses><license><name>MIT</name><url>https://opensource.org/license/mit</url></license></licenses>
+</project>

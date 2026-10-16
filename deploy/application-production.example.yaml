@@ -1,0 +1,30 @@
+# 复制为服务器 config/application-production.yaml，按服务器环境设置变量。
+# 不包含任何本机地址、密码或真实密钥；生产依赖均由环境注入。
+server:
+  address: 127.0.0.1
+  port: 17892
+  forward-headers-strategy: framework
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:1}
+      username: ${REDIS_USERNAME:default}
+      password: ${REDIS_PASSWORD:}
+mihoyo:
+  frontend-url: ${FRONTEND_URL}
+  redis:
+    phone-key-secret: ${MIHOYO_PHONE_KEY_SECRET}
+workbench:
+  session:
+    encryption-key: ${WORKBENCH_ENCRYPTION_KEY}
+    cookie-secure: true
+    allowed-origins: ${WORKBENCH_ALLOWED_ORIGINS}
+genshin:
+  storage:
+    enabled: true
