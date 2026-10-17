@@ -51,8 +51,10 @@ public class GenshinArchiveService {
             explorations.add(new Exploration(text(area, "name"),
                     percentage == null ? null : percentage / 10.0, number(area, "level")));
         }
+        String avatar = image(text(role, "AvatarUrl"));
+        if (avatar == null) avatar = image(text(role, "avatar_url"));
         return new Overview(request.gameUid(), text(role, "nickname"), number(role, "level"),
-                image(text(role, "avatar_url")), number(stats, "achievement_number"),
+                avatar, number(stats, "achievement_number"),
                 number(stats, "active_day_number"), text(stats, "spiral_abyss"),
                 new Theater(number(theater, "max_round_id"), bool(theater, "is_unlock"), bool(theater, "has_data")),
                 List.copyOf(extra), List.copyOf(explorations), Instant.now());

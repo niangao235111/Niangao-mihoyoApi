@@ -1,6 +1,6 @@
 # 后端云服务器部署
 
-本仓库仅包含Java后端，前端独立部署并通过HTTP调用本服务。部署需要Java17+、MySQL和Redis；本次未向用户云服务器安装服务。
+本仓库仅包含Java后端，前端独立部署并通过HTTP调用本服务。部署需要Java17+、MySQL和Redis。
 
 ## 构建与运行包
 
@@ -8,7 +8,7 @@
 
 Windows可用 `scripts/package-backend.ps1 -OutputDirectory <项目外绝对目录>` 构建并生成运行ZIP与SHA256。已经构建可加-SkipBuild。脚本不自动运行测试，发布前执行mvn clean verify。ZIP包含app.jar、config配置示例、bin/start.sh、systemd模板、SQL、许可证、接口文档和请求示例，不含实际配置/凭证。
 
-源码内vendor/maven和licenses必须保留，固定UIGF SDK尚未发布Central。运行JAR已经包含必要依赖，运行服务器无需安装Maven或上传vendor。运行ZIP约35MiB，源码约2MiB，二者用途不同。
+源码内vendor/maven和licenses必须保留，固定UIGF SDK尚未发布Central。运行JAR已经包含必要依赖，运行服务器无需安装Maven或上传vendor。运行包包含完整依赖，体积大于源码；实际大小随依赖版本变化。
 
 ## 服务器准备
 
@@ -31,7 +31,7 @@ sudo systemctl status niangao-mihoyo
 sudo journalctl -u niangao-mihoyo -n 100 --no-pager
 ```
 
-默认Java堆128～512MB，可按服务器资源调整。服务日志由journal保存，JAR体积不等于进程内存。模板尚未在用户云服务器实际安装验证。
+默认Java堆128～512MB，可按服务器资源调整。服务日志由journal保存，JAR体积不等于进程内存。模板中的用户、路径与内存参数需按实际环境调整。
 
 ## 独立前端与HTTPS网关
 

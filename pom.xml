@@ -10,8 +10,8 @@
     <groupId>com.niangao</groupId>
     <artifactId>niangao-mihoyo</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>Niangao Mihoyo</name>
-    <description>个人网站后端，目前实现米哈游凭证获取与关联游戏账号查询</description>
+    <name>Niangao-mihoyoApi</name>
+    <description>米游社登录、原神国服账号总览、角色装备详情与档案保存后端</description>
     <properties>
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
