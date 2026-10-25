@@ -50,6 +50,9 @@ healthcheck:
 
 探针必须与包含该接口的 JAR 同批上线：旧 JAR 没有这个路径，提前改探针会让容器被判 unhealthy。此前探针复用 `/api/workbench/session` 并把 401 当作成功，每 20 秒写一条 `工作台接口失败 status=401, stage=unspecified, upstream_retcode=none` 告警（实测 180 条/小时）。应用侧已把该路径上的预期未登录 401 降到 DEBUG，`POST /session/renew` 等其他 401 仍按 WARN 记录。
 
+只读根文件系统（`read_only: true`）还要给文件日志一个可写路径。默认值 `${user.dir}/.local/backend.log` 在容器里是 `/app/.local/backend.log`，不可写时会打印 `Failed to create parent directories` 的 logback ERROR（stdout 日志仍正常，只是没有文件副本）。在 `backend.environment` 里加 `APP_LOG_FILE: /tmp/backend.log`，与 `tmpfs: ['/tmp:size=64m,mode=1777']` 配合即可。
+
+
 ## 独立前端与HTTPS网关
 
 后端默认仅监听127.0.0.1:17892，浏览器经HTTPS同源网关的/api/访问。前端静态文件由网页服务器独立提供，JAR不包含网页。Nginx代理示例（嵌入已有HTTPS server块）：
