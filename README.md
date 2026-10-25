@@ -1,12 +1,12 @@
 # Niangao-mihoyoApi
 
-基于 Java 17 / Spring Boot 的米游社与原神国服 API 后端。首次公开发布主要完成 **短信登录、账号数据总览、已拥有角色与装备详情**，供独立部署的网页或其他客户端通过 HTTP 调用。
+基于 Java 17 / Spring Boot 的米游社与原神国服 API 后端，覆盖 **短信登录、账号总览、角色与装备档案、祈愿记录（含 UIGF 导入导出）与工作台会话**，供独立部署的网页或其他客户端通过 HTTP 调用。
 
 本项目为社区个人项目，与米哈游 / HoYoverse 无官方关联。上游接口、凭证有效期和安全验证要求由米哈游决定；当前仅支持原神国服官服与 B 服。
 
 ## 已实现功能
 
-2026-10-18 新增祈愿记录同步、明细分析及 UIGF 导入导出。需额外执行 `db/mysql/020_create_genshin_wishes.sql`；接口和升级说明见 [祈愿功能文档](docs/genshin-wish-api.md)。前端为独立项目，未打入本后端。
+2026-10-25 状态：新增祈愿记录同步与分析（7 个接口，需额外执行 `db/mysql/020_create_genshin_wishes.sql`）、独立健康检查 `GET /api/workbench/health`，并按上游语义区分「1034 需要验证」与「5003 账号风险」。`mvn clean verify` 当前 118 项测试通过；祈愿接口见 [祈愿功能文档](docs/genshin-wish-api.md)，验证与错误码结论见 [战绩安全验证记录](docs/genshin-verification.md)。
 
 | 模块 | 内容 |
 | --- | --- |
@@ -14,9 +14,11 @@
 | 关联账号 | 使用授权凭证读取绑定游戏账号；区分官服 `cn_gf01` 与 B 服 `cn_qd01`，拒绝国际服 |
 | 账号总览 | 成就总数、活跃天数、深境螺旋、幻想真境剧诗，以及上游提供的其他统计与探索数据 |
 | 角色与装备 | 已拥有角色列表、等级与命座、天赋、武器、圣遗物与面板详情；具体字段取决于上游返回 |
-| 战绩安全验证 | 创建验证任务 → 用户本人完成验证 → 提交结果 → 重试读取，不提供自动解题 |
+| 战绩安全验证 | 创建验证任务 → 用户本人完成验证 → 提交结果 → 重试读取，不提供自动解题；仅 1034 / 10035 / 10041 触发验证，5003 属账号风险直接提示 |
+| 祈愿记录 | AuthKey 自动授权或粘贴历史链接、分页同步入库、各卡池统计、明细游标分页、UIGF v4.2 导入导出 |
 | 工作台会话 | HttpOnly Cookie、CSRF 与来源校验；Redis 加密保存凭证，支持恢复、续期及退出 |
 | 档案保存 | MySQL 保存最近成功的总览、角色与装备数据及查询记录；支持离线读取已保存档案，不保存每日快照 |
+| 健康检查 | `GET /api/workbench/health` 不要求登录、不访问上游、不返回敏感信息，供容器探针使用 |
 | 异常处理 | 返回操作阶段与脱敏错误；只读请求的临时网络错误最多额外重试 2 次，短信发送与验证码提交不自动重试 |
 
 短信登录流程固定 10 分钟有效；本站工作台会话默认 7 天无活动到期、创建后最长 30 天。这些期限不代表米哈游凭证的官方有效期，上游凭证失效时仍需重新登录。
@@ -28,7 +30,7 @@ Java 17、Spring Boot 3.5.16、Spring MVC、Spring JDBC、Redis / Lua、MySQL、
 ```text
 src/main/       后端接口、业务逻辑、上游客户端、配置及 Redis Lua
 src/test/       单元测试与 MySQL / Redis 集成测试
-db/mysql/       手工执行的四张档案表建表 SQL
+db/mysql/       手工执行的档案（010）与祈愿（020）建表 SQL
 deploy/         环境变量、生产配置与 systemd 模板
 scripts/        本地密钥初始化与后端打包脚本
 docs/           接口、部署、测试及数据存储说明
@@ -47,9 +49,10 @@ licenses/       第三方许可证
 
 ```text
 db/mysql/010_create_genshin_archive.sql
+db/mysql/020_create_genshin_wishes.sql
 ```
 
-建表脚本创建账号、查询记录、最新总览、最新角色四张表。应用不会自动初始化数据库，已有表请先核对结构，避免覆盖数据。
+建表脚本创建账号、查询记录、最新总览、最新角色四张档案表，以及祈愿明细、同步任务两张表。应用不会自动初始化数据库，已有表请先核对结构，避免覆盖数据。
 
 ### 2. 配置服务
 
@@ -80,8 +83,9 @@ java -jar target/niangao-mihoyo-0.1.0-SNAPSHOT.jar
 
 ## 接口文档与调用流程
 
-- [完整接口文档：20 个接口、请求参数、返回值、错误码和验证流程](docs/backend-api.md)
-- [完整 HTTP 请求示例](requests/backend-all.http)
+- [完整接口文档：登录、工作台会话、档案、安全验证与祈愿接口，含请求参数、返回值与错误码](docs/backend-api.md)
+- [祈愿接口与升级说明](docs/genshin-wish-api.md)
+- [完整 HTTP 请求示例](requests/backend-all.http)（祈愿见 [requests/wishes.http](requests/wishes.http)）
 - [MySQL 表结构与保存规则](docs/genshin-archive-storage.md)
 - [测试记录与覆盖范围](docs/backend-test-report.md)
 
@@ -100,9 +104,9 @@ java -jar target/niangao-mihoyo-0.1.0-SNAPSHOT.jar
 mvn clean verify
 ```
 
-完整集成测试需要可连接的 MySQL / Redis，以及已初始化的四张表。请使用隔离测试环境；测试采用随机 HTTP 端口与测试账号数据，上游为本地模拟，不会发送真实短信。
+完整集成测试需要可连接的 MySQL / Redis，以及已初始化的六张表。请使用隔离测试环境；测试采用随机 HTTP 端口与测试账号数据，上游为本地模拟，不会发送真实短信。
 
-首次发布验证结果见 [测试记录](docs/backend-test-report.md)。自动测试验证本项目行为，不能保证真实上游持续可用。真实查询仍可能遇到网络超时、战绩未公开、安全验证或凭证失效。
+2026-10-25 最后一次全量回归：`mvn clean verify` **118 项通过，0 失败 / 0 错误**。首次发布验证结果见 [测试记录](docs/backend-test-report.md)。自动测试验证本项目行为，不能保证真实上游持续可用。真实查询仍可能遇到网络超时、战绩未公开、账号风险（5003）或验证码（1034）；验证流程的真实提交结果记录在 [战绩安全验证记录](docs/genshin-verification.md)。
 
 尚未提供网站用户注册、国际服支持、每日历史快照或自动验证码识别。
 
