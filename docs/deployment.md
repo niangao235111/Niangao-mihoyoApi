@@ -52,6 +52,22 @@ healthcheck:
 
 只读根文件系统（`read_only: true`）还要给文件日志一个可写路径。默认值 `${user.dir}/.local/backend.log` 在容器里是 `/app/.local/backend.log`，不可写时会打印 `Failed to create parent directories` 的 logback ERROR（stdout 日志仍正常，只是没有文件副本）。在 `backend.environment` 里加 `APP_LOG_FILE: /tmp/backend.log`，与 `tmpfs: ['/tmp:size=64m,mode=1777']` 配合即可。
 
+容器里的 nginx 反向代理后端时，`proxy_pass http://backend:17892` 只会在启动时解析一次域名。后端容器重建后 IP 会变，前端容器仍连旧 IP，表现为 `/` 正常但 `/api/` 全部 502（`connect() failed (111: Connection refused)`）。用 Docker 内置 DNS 让每次请求重新解析即可：
+
+```nginx
+http {
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    # ...
+    location /api/ {
+        set $backend_upstream backend:17892;
+        proxy_pass http://$backend_upstream;   # 带变量时按原始 URI 转发，不做路径改写
+    }
+}
+```
+
+改完在容器内 `nginx -t && nginx -s reload`，无需重建前端容器。
+
+
 
 ## 独立前端与HTTPS网关
 
