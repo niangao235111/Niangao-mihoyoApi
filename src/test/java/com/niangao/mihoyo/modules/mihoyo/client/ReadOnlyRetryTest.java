@@ -109,4 +109,30 @@ class ReadOnlyRetryTest {
             assertEquals(503,response.getStatusCode()); assertEquals(1,calls.get());
         }
     }
+    @Test void pooledPaginationReusesClientAndActualHttpConnectionAcrossPages() throws Exception {
+        var server=com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1",0),0);
+        java.util.Set<Integer> ports=java.util.concurrent.ConcurrentHashMap.newKeySet();
+        server.createContext("/read",exchange->{
+            ports.add(exchange.getRemoteAddress().getPort());exchange.getRequestBody().readAllBytes();
+            byte[] body="{\"retcode\":0,\"data\":{}}".getBytes();
+            exchange.sendResponseHeaders(200,body.length);exchange.getResponseBody().write(body);exchange.close();
+        });server.start();
+        AtomicInteger builds=new AtomicInteger();
+        var pooled=new SdkTransport(new MihoyoProperties()) {
+            @Override protected HttpClient buildDelegate(Duration connect,Duration response) {
+                builds.incrementAndGet();assertEquals(Duration.ofSeconds(10),connect);
+                return super.buildDelegate(connect,response);
+            }
+        };
+        try {
+            for(int page=0;page<15;page++) {
+                var captured=new UpstreamReply();
+                var request=new HttpRequest().setMethod(HttpMethod.GET).setUri("http://127.0.0.1:"+server.getAddress().getPort()+"/read?page="+page);
+                try(var response=pooled.createReadOnlyPooled("genshin_wishes","fixture",captured,true,4096,h->{}).send(request)){
+                    assertEquals(200,response.getStatusCode());assertNotNull(captured.getBody());
+                }
+            }
+            assertEquals(1,builds.get());assertEquals(1,ports.size());
+        }finally{server.stop(0);}
+    }
 }

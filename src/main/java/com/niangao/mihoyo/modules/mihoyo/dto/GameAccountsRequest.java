@@ -16,7 +16,11 @@ public record GameAccountsRequest(
         @NotBlank @Pattern(regexp = "[0-9]{1,20}") String stuid,
         @NotBlank @Size(max = 8192) String mid,
         String gameBiz,
-        String ds) {
+        String ds,
+        @com.fasterxml.jackson.annotation.JsonIgnore String deviceId) {
+    public GameAccountsRequest(String stoken, String stuid, String mid, String gameBiz, String ds) {
+        this(stoken, stuid, mid, gameBiz, ds, null);
+    }
     @Override
     public String toString() {
         return "GameAccountsRequest[redacted]";

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.niangao.mihoyo.common.exception.BusinessException;
 import com.niangao.mihoyo.modules.mihoyo.dto.GameAccountsRequest;
 import com.niangao.mihoyo.modules.mihoyo.service.MihoyoGameAccountService;
+import com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding;
+import com.niangao.mihoyo.modules.genshin.service.GenshinDeviceService;
+import com.niangao.mihoyo.modules.mihoyo.config.MihoyoRedisProperties;
 import com.niangao.mihoyo.modules.mihoyo.vo.GameAccountsResponse;
 import com.niangao.mihoyo.modules.workbench.config.WorkbenchSessionProperties;
 import com.niangao.mihoyo.modules.workbench.entity.WorkbenchSecret;
@@ -21,6 +24,8 @@ class WorkbenchSessionTest {
     final WorkbenchSessionProperties settings = new WorkbenchSessionProperties();
     final MemoryMapper mapper = new MemoryMapper();
     final MihoyoGameAccountService accounts = mock(MihoyoGameAccountService.class);
+    final LoginDeviceBinding loginDevices = mock(LoginDeviceBinding.class);
+    GenshinDeviceService devices;
     WorkbenchCipher cipher;
     WorkbenchSessionService service;
     final GameAccountsRequest input = new GameAccountsRequest("fixture-stoken", "123456", "fixture-mid", null, null);
@@ -28,8 +33,46 @@ class WorkbenchSessionTest {
     @BeforeEach void setup() {
         settings.setEncryptionKey(Base64.getEncoder().encodeToString(new byte[32]));
         cipher = new WorkbenchCipher(settings, new ObjectMapper());
-        service = new WorkbenchSessionService(mapper, cipher, accounts);
+        var deviceSettings = new MihoyoRedisProperties();
+        deviceSettings.setPhoneKeySecret("test-only-device-secret");
+        devices = new GenshinDeviceService(null, null, deviceSettings);
+        service = new WorkbenchSessionService(mapper, cipher, accounts, loginDevices, devices);
         when(accounts.queryAccounts(any())).thenReturn(new GameAccountsResponse("test", 0, List.of()));
+    }
+
+    @Test void loginDeviceSurvivesRestoreAndHandoffExpiryWithoutCrossingSessions() throws Exception {
+        String loginDevice = "a".repeat(53), otherDevice = "b".repeat(53);
+        when(loginDevices.find(input.stoken(), input.stuid(), input.mid())).thenReturn(loginDevice);
+        var issued = service.create(input, null);
+        verify(accounts).queryAccounts(argThat(request -> loginDevice.equals(request.deviceId())));
+        // 交接记录过期、服务重建后，已加密的工作台会话仍保存原来的设备。
+        when(loginDevices.find(input.stoken(), input.stuid(), input.mid())).thenReturn(null);
+        var restoredService = new WorkbenchSessionService(mapper, cipher, accounts, loginDevices, devices);
+        assertFalse(new ObjectMapper().findAndRegisterModules().writeValueAsString(restoredService.restore(issued.token())).contains(loginDevice));
+        assertEquals(loginDevice, restoredService.withSession(issued.token(), issued.view().csrfToken(), WorkbenchSecret::deviceId));
+        when(loginDevices.find(input.stoken(), input.stuid(), input.mid())).thenReturn(otherDevice);
+        var next = service.create(input, null);
+        assertEquals(otherDevice, service.withSession(next.token(), next.view().csrfToken(), WorkbenchSecret::deviceId));
+        assertEquals(loginDevice, service.withSession(issued.token(), issued.view().csrfToken(), WorkbenchSecret::deviceId));
+    }
+
+    @Test void oldEncryptedSessionWithoutDeviceRemainsReadableAndUsesStableFallback() {
+        String old = cipher.encryptValue(Map.of("stoken", input.stoken(), "stuid", input.stuid(),
+                "mid", input.mid(), "roles", List.of()), "legacy-session");
+        var secret = cipher.decrypt(old, "legacy-session");
+        assertNull(secret.deviceId());
+        assertEquals(devices.deviceId(input.stuid(), input.mid()),
+                devices.deviceId(secret.stuid(), secret.mid(), secret.deviceId()));
+        var issued = service.create(input, null);
+        assertEquals(devices.deviceId(input.stuid(), input.mid()),
+                service.withSession(issued.token(), issued.view().csrfToken(), WorkbenchSecret::deviceId));
+    }
+
+    @Test void publicRequestsCannotSupplyServerDeviceContext() throws Exception {
+        var json = new ObjectMapper();
+        String injected = "{\"stoken\":\"fixture\",\"stuid\":\"123\",\"mid\":\"fixture-mid\",\"deviceId\":\"" + "x".repeat(53) + "\"}";
+        assertNull(json.readValue(injected, GameAccountsRequest.class).deviceId());
+        assertNull(json.readValue(injected, com.niangao.mihoyo.modules.genshin.dto.GenshinRecordRequest.class).deviceId());
     }
 
     @Test void encryptedStorageAndRefreshRestoreWithoutReturningCredentials() {

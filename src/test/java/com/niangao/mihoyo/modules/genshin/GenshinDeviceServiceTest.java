@@ -55,4 +55,14 @@ class GenshinDeviceServiceTest {
         verify(mapper, never()).saveIfAbsent(anyString(), anyString());
         assertFalse(new GenshinDeviceService.Device("private-device", "private-fp").toString().contains("private"));
     }
+    @Test void originalLoginDeviceIsNotReplacedOrReformattedWhenRequestingFingerprint() {
+        String loginId = "z".repeat(53);
+        when(client.fetch(loginId)).thenReturn("login-device-fingerprint");
+        when(mapper.saveIfAbsent(loginId, "login-device-fingerprint")).thenReturn("login-device-fingerprint");
+        var device = service.resolve("123", "fixture-mid", loginId);
+        assertEquals(loginId, device.id());
+        assertEquals("login-device-fingerprint", device.fp());
+        verify(client).fetch(loginId);
+        assertThrows(IllegalArgumentException.class, () -> service.resolve("123", "fixture-mid", "invalid\r\nheader"));
+    }
 }

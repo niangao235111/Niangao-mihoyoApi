@@ -13,9 +13,12 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.junit.jupiter.api.extension.ExtendWith;
 import java.net.URI;
 import java.net.http.*;
 import java.util.*;
@@ -29,6 +32,7 @@ import static org.mockito.Mockito.*;
         properties = {"mihoyo.redis.phone-key-secret=workbench-test-only",
                 "workbench.session.encryption-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
                 "workbench.session.cookie-secure=true"})
+@ExtendWith(OutputCaptureExtension.class)
 class WorkbenchHttpIntegrationTest {
     @LocalServerPort int port;
     @Autowired ObjectMapper json;
@@ -129,5 +133,17 @@ class WorkbenchHttpIntegrationTest {
         create(); String old = cookie; create(); String current = cookie;
         cookie = old; assertEquals(401, send("GET", "/session", null).statusCode());
         cookie = current; assertEquals(200, send("GET", "/session", null).statusCode());
+    }
+
+    /** 健康探测不能依赖登录态；预期内的未登录 401 不再写告警，其他接口的 401 仍告警。 */
+    @Test void healthNeedsNoSessionAndUnauthenticatedRestoreProbeStaysQuiet(CapturedOutput output) throws Exception {
+        cookie = null;
+        var health = send("GET", "/health", null);
+        assertEquals(200, health.statusCode()); assertTrue(health.body().contains("\"status\":\"ok\""));
+        assertEquals(401, send("GET", "/session", null).statusCode());
+        assertEquals(401, send("GET", "/session", null).statusCode());
+        assertFalse(output.getAll().contains("工作台接口失败 status=401"), output.getAll());
+        assertEquals(401, send("POST", "/session/renew", "{}").statusCode());
+        assertTrue(output.getAll().contains("工作台接口失败 status=401"), output.getAll());
     }
 }

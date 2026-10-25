@@ -45,7 +45,8 @@ public class MihoyoGameAccountServiceImpl implements MihoyoGameAccountService {
         // Client 返回上游角色，Service 在本地按游戏和渠道筛选。
         long started = System.nanoTime();
         log.info("关联游戏账号查询开始 game_biz={}", game == null ? "all" : game);
-        JsonArray raw = client.queryRoles(stoken, request.stuid(), mid, ds);
+        JsonArray raw = request.deviceId() == null ? client.queryRoles(stoken, request.stuid(), mid, ds)
+                : client.queryAuthorizedRoles(stoken, request.stuid(), mid, ds, request.deviceId()).roles();
         List<GameAccountVO> accounts = new ArrayList<>();
         for (JsonElement item : raw) {
             if (!item.isJsonObject()) throw new BusinessException(502, "上游游戏账号条目格式异常");

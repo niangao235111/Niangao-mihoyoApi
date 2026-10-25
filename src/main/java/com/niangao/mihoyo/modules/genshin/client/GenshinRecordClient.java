@@ -51,7 +51,7 @@ public class GenshinRecordClient {
         if (!GenshinChannels.supports(request.gameBiz(), request.region())) {
             throw new BusinessException(400, "原神渠道与服务器不匹配");
         }
-        String deviceId = devices.deviceId(request.stuid(), request.mid());
+        String deviceId = devices.deviceId(request.stuid(), request.mid(), request.deviceId());
         var authorized = accounts.queryAuthorizedRoles(request.stoken(), request.stuid(), request.mid(), null, deviceId);
         for (JsonElement element : authorized.roles()) {
             if (!element.isJsonObject()) continue;
@@ -59,7 +59,7 @@ public class GenshinRecordClient {
             if (request.gameUid().equals(ProtocolJsonUtil.optional(role, "game_uid"))
                     && request.region().equals(ProtocolJsonUtil.optional(role, "region"))
                     && GenshinChannels.supports(ProtocolJsonUtil.optional(role, "game_biz"), ProtocolJsonUtil.optional(role, "region"))) {
-                return new Authorization(authorized.cookie(), devices.resolve(request.stuid(), request.mid()));
+                return new Authorization(authorized.cookie(), devices.resolve(request.stuid(), request.mid(), request.deviceId()));
             }
         }
         throw new BusinessException(403, "该原神角色未关联到当前米哈游账号，请重新查询绑定角色");
@@ -136,18 +136,28 @@ public class GenshinRecordClient {
         if (code != 0) {
             String message = switch (code) {
                 case 10102 -> "战绩或角色详情未公开，请在米游社检查对应展示设置";
-                case 5003 -> "米游社拒绝了当前设备的战绩请求（账号或设备风控），不代表工作台会话已过期；请在官方米游社检查账号安全状态后手动重试";
+                // 官方网页把 5003 直接显示为「当前账号存在风险，暂无数据」，并明确不弹验证码；
+                // 该状态无法通过 GT3 解决，必须先在官方米游社完成账号异常验证。
+                case 5003 -> "当前账号存在风险，暂无数据。请先在官方米游社完成账号异常验证，再回来刷新档案";
+                case 10103 -> "该账号已被封禁，无法查看战绩";
                 case 1034, 10035, 10041 -> "米游社要求安全验证，请在官方米游社检查账号状态；官方应用正常也不代表本站设备已通过验证";
                 case -100, -101 -> "米哈游凭证已失效，请重新连接账号";
                 default -> "原神战绩查询被上游拒绝";
             };
             String reason = switch (code) {
-                case 1034, 10035, 10041, 5003 -> "upstream_verification_required";
+                case 1034, 10035, 10041 -> "upstream_verification_required";
+                case 5003 -> "upstream_account_risk";
+                case 10103 -> "upstream_account_banned";
                 default -> "upstream_rejected";
             };
             var details = new HashMap<String, Object>();
             details.put("stage", stage); details.put("upstream_retcode", code); details.put("reason", reason);
             if (reply.getTraceId() != null && reply.getTraceId().matches("[A-Za-z0-9_.:-]{1,256}")) details.put("verification_trace", reply.getTraceId());
+            // 只记录字段名与脱敏说明：用于判断 5003/1034 是否随响应下发了验证任务（x-rpc-aigis 或 data.gt）。
+            log.info("原神战绩拒绝 stage={}, upstream_retcode={}, upstream_message={}, response_keys={}, data_keys={}, verification_trace_present={}, verification_trace_len={}, aigis_present={}, aigis_len={}",
+                    stage, code, upstreamMessage(reply.getBody()), jsonKeys(reply.getBody(), ""), jsonKeys(reply.getBody(), "data"),
+                    reply.getTraceId() != null, reply.getTraceId() == null ? 0 : reply.getTraceId().length(),
+                    reply.getAigis() != null, reply.getAigis() == null ? 0 : reply.getAigis().length());
             throw new BusinessException(422, message, details);
         }
         JsonElement data = reply.getBody().get("data");
@@ -156,4 +166,26 @@ public class GenshinRecordClient {
     }
 
     private long elapsed(long started) { return (System.nanoTime() - started) / 1_000_000; }
+    /** 只列出安全的字段名，不记录字段值。field 为空时取顶层对象。 */
+    static String jsonKeys(JsonObject body, String field) {
+        if (body == null) return "none";
+        var value = field.isEmpty() ? body : body.get(field);
+        if (value == null || !value.isJsonObject()) return "none";
+        var keys = value.getAsJsonObject().keySet().stream()
+                .filter(key -> key.matches("[A-Za-z0-9_]{1,32}")).sorted().limit(20).toList();
+        return keys.isEmpty() ? "none" : String.join("|", keys);
+    }
+    /** 上游说明只保留汉字与常用标点，ASCII 标识、数字、URL 与换行一律移除。 */
+    static String upstreamMessage(JsonObject body) {
+        if (body == null) return "unavailable";
+        var value = body.get("message");
+        if (value == null || value.isJsonNull() || (value.isJsonPrimitive()
+                && value.getAsJsonPrimitive().isString() && value.getAsString().isBlank())) value = body.get("msg");
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) return "unavailable";
+        String message = value.getAsString();
+        if (message.length() > 256) return "redacted";
+        message = message.replaceAll("[^\\p{IsHan}，。！？：；、（）《》“”‘’\\s]+", "[redacted]")
+                .replaceAll("[\\p{Cc}\\p{Cf}\\s]+", " ").strip();
+        return message.isEmpty() ? "unavailable" : message;
+    }
 }

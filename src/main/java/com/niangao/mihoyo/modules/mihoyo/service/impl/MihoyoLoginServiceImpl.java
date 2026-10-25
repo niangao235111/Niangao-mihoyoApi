@@ -11,6 +11,7 @@ import com.niangao.mihoyo.modules.mihoyo.entity.LoginSession;
 import com.niangao.mihoyo.modules.mihoyo.enums.*;
 import com.niangao.mihoyo.modules.mihoyo.mapper.LoginSessionMapper;
 import com.niangao.mihoyo.modules.mihoyo.service.MihoyoLoginService;
+import com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding;
 import com.niangao.mihoyo.modules.mihoyo.util.DeviceIdUtil;
 import com.niangao.mihoyo.modules.mihoyo.util.ProtocolJsonUtil;
 import com.niangao.mihoyo.modules.mihoyo.vo.*;
@@ -36,16 +37,18 @@ public class MihoyoLoginServiceImpl implements MihoyoLoginService {
     private final MihoyoProperties properties;
 
     private final Clock clock;
+    private final LoginDeviceBinding loginDevices;
 
     public MihoyoLoginServiceImpl(
             LoginSessionMapper mapper,
             MihoyoPassportClient client,
             MihoyoProperties properties,
-            Clock clock) {
+            Clock clock, LoginDeviceBinding loginDevices) {
         this.mapper = mapper;
         this.client = client;
         this.properties = properties;
         this.clock = clock;
+        this.loginDevices = loginDevices;
     }
 
     /** 创建一次短信登录流程，固定手机号、设备标识和过期时间。这里只写入会话，不向米哈游发送短信。 */
@@ -158,6 +161,8 @@ public class MihoyoLoginServiceImpl implements MihoyoLoginService {
             LoginResponse result =
                     process(session, client.call(session, operation, captcha, proof), operation);
             LoginSession saved = mapper.completeOperation(session, operationId);
+            // 只交接已原子确认成功的登录，失败、删除或迟到的登录结果不能建立绑定。
+            if (result.credentials() != null) loginDevices.remember(result.credentials(), saved.getDeviceId());
             log.info(
                     "米哈游登录操作完成 session_tag={}, operation={}, state={}, elapsed_ms={}",
                     sessionTag(saved.getId()),

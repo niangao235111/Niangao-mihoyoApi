@@ -13,8 +13,10 @@ import io.clientcore.core.models.binarydata.BinaryData;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.util.EnumSet;
+import javax.net.ssl.SSLContext;
 
 /** SDK HTTP 适配：固定头、有限响应；仅显式只读调用允许有限网络重试。 */
 @Component
@@ -60,8 +62,24 @@ public class SdkTransport {
         };
     }
 
+    // 祈愿为长分页读取；稳定的超时档位复用客户端，避免每页新建 TLS 连接。
+    private final java.util.Map<String, HttpClient> readClients = new java.util.LinkedHashMap<>();
+    public HttpClient createReadOnlyPooled(String stage, String deviceId, UpstreamReply capture, boolean binding,
+            int maxBytes, java.util.function.Consumer<HttpHeaders> customize) {
+        return request -> {
+            if (request.getBody() != null) request.setBody(BinaryData.fromBytes(request.getBody().toBytes()));
+            return ReadOnlyRetry.execute(stage, remaining ->
+                    create(deviceId, capture, binding, null, maxBytes, customize, remaining, true).send(request));
+        };
+    }
+
     private HttpClient create(String deviceId, UpstreamReply capture, boolean binding, String proof, int maxBytes,
             java.util.function.Consumer<HttpHeaders> customize, Duration remaining) {
+        return create(deviceId, capture, binding, proof, maxBytes, customize, remaining, false);
+    }
+
+    private HttpClient create(String deviceId, UpstreamReply capture, boolean binding, String proof, int maxBytes,
+            java.util.function.Consumer<HttpHeaders> customize, Duration remaining, boolean pooled) {
         if (maxBytes < 1 || maxBytes > 4 * 1024 * 1024) {
             throw new IllegalArgumentException("Invalid response limit");
         }
@@ -69,9 +87,22 @@ public class SdkTransport {
         if (remaining != null) {
             // 获取响应和读取流均受超时限制，分别分配剩余预算，避免串行等待超过预算。
             responseTimeout = minimum(responseTimeout, remaining.dividedBy(2));
-            connect = minimum(connect, minimum(responseTimeout, Duration.ofSeconds(5)));
+            if (pooled && responseTimeout.toSeconds() >= 1) responseTimeout = Duration.ofSeconds(responseTimeout.toSeconds());
+            connect = minimum(connect, minimum(responseTimeout, Duration.ofSeconds(pooled ? 10 : 5)));
         }
-        HttpClient delegate = buildDelegate(connect, responseTimeout);
+        HttpClient delegate;
+        if (pooled) {
+            String key = connect.toMillis() + ":" + responseTimeout.toMillis();
+            synchronized (readClients) {
+                delegate = readClients.get(key);
+                if (delegate == null) {
+                    delegate = buildDelegate(connect, responseTimeout);
+                    if (readClients.size() >= 8) readClients.remove(readClients.keySet().iterator().next());
+                    readClients.put(key, delegate);
+                }
+            }
+        } else delegate = buildDelegate(connect, responseTimeout);
+        final HttpClient sender = delegate;
         return request -> {
             request.getHeaders()
                     .set(
@@ -93,7 +124,7 @@ public class SdkTransport {
             // JDK 根据实际 BodyPublisher 生成长度；它本来也会忽略 SDK 手工设置的此头。
             request.getHeaders().remove(HttpHeaderName.fromString("Content-Length"));
             Response<BinaryData> response;
-            try { response = delegate.send(request); }
+            try { response = sender.send(request); }
             catch (RuntimeException ex) { throw ReadOnlyRetry.failure("upstream", ex); }
             capture.setHttpStatus(response.getStatusCode());
             capture.setTraceId(response.getHeaders().getValue(HttpHeaderName.fromString("x-trace-id")));
@@ -133,7 +164,19 @@ public class SdkTransport {
     }
 
     protected HttpClient buildDelegate(Duration connect, Duration response) {
-        return new JdkHttpClientBuilder().connectionTimeout(connect).responseTimeout(response).readTimeout(response).build();
+        return new JdkHttpClientBuilder().sslContext(buildSslContext())
+                .connectionTimeout(connect).responseTimeout(response).readTimeout(response).build();
+    }
+
+    /** 米哈游部分节点的 TLS 1.3 协商会超时；仅此 SDK 客户端使用 TLS 1.2，保留默认信任校验。 */
+    protected SSLContext buildSslContext() {
+        try {
+            SSLContext context = SSLContext.getInstance("TLSv1.2");
+            context.init(null, null, null);
+            return context;
+        } catch (GeneralSecurityException ex) {
+            throw new IllegalStateException("无法初始化米哈游 TLS 客户端", ex);
+        }
     }
 
     private static Duration minimum(Duration a, Duration b) { return a.compareTo(b) < 0 ? a : b; }

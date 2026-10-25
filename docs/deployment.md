@@ -2,6 +2,8 @@
 
 本仓库仅包含Java后端，前端独立部署并通过HTTP调用本服务。部署需要Java17+、MySQL和Redis。
 
+米哈游 SDK 的出站 HTTPS 客户端使用独立的 TLS 1.2 上下文，避免部分上游节点在 TLS 1.3 协商时超时。证书信任及主机名校验保持开启，不修改 JVM 全局 TLS 设置，短信发送也不会自动重试。此设置用于改善协议兼容性，不能保证上游网络和业务风控始终可用。
+
 ## 构建与运行包
 
 执行 `mvn -DskipTests package` 得到 `target/niangao-mihoyo-0.1.0-SNAPSHOT.jar`。构建和运行后端不需要Node或前端目录。
@@ -32,6 +34,21 @@ sudo journalctl -u niangao-mihoyo -n 100 --no-pager
 ```
 
 默认Java堆128～512MB，可按服务器资源调整。服务日志由journal保存，JAR体积不等于进程内存。模板中的用户、路径与内存参数需按实际环境调整。
+
+## 容器健康检查
+
+`GET /api/workbench/health` 是独立健康探针：不要求登录、不访问米哈游上游、只返回 `{"code":200,"message":"成功","data":{"status":"ok"}}`。生产用 Docker Compose 时后端服务配置：
+
+```yaml
+healthcheck:
+  test: ["CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/17892; printf 'GET /api/workbench/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3; head -1 <&3 | grep -q ' 200 '"]
+  interval: 20s
+  timeout: 5s
+  retries: 6
+  start_period: 60s
+```
+
+探针必须与包含该接口的 JAR 同批上线：旧 JAR 没有这个路径，提前改探针会让容器被判 unhealthy。此前探针复用 `/api/workbench/session` 并把 401 当作成功，每 20 秒写一条 `工作台接口失败 status=401, stage=unspecified, upstream_retcode=none` 告警（实测 180 条/小时）。应用侧已把该路径上的预期未登录 401 降到 DEBUG，`POST /session/renew` 等其他 401 仍按 WARN 记录。
 
 ## 独立前端与HTTPS网关
 

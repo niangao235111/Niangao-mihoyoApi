@@ -15,6 +15,7 @@ import com.niangao.mihoyo.modules.mihoyo.entity.LoginSession;
 import com.niangao.mihoyo.modules.mihoyo.enums.LoginState;
 import com.niangao.mihoyo.modules.mihoyo.mapper.LoginSessionMapper;
 import com.niangao.mihoyo.modules.mihoyo.service.impl.MihoyoLoginServiceImpl;
+import com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,12 +50,16 @@ class ConsoleLogSafetyTest {
                                         + "\",\"user_info\":{\"aid\":\"123456789\",\"mid\":\"secret-mid-test\"}}}")
                         .getAsJsonObject());
         when(client.call(any(), any(), anyString(), isNull())).thenReturn(reply);
+        LoginDeviceBinding devices = mock(LoginDeviceBinding.class);
         MihoyoLoginServiceImpl service =
                 new MihoyoLoginServiceImpl(
-                        mapper, client, new MihoyoProperties(), Clock.systemUTC());
+                        mapper, client, new MihoyoProperties(), Clock.systemUTC(), devices);
         assertEquals(
                 LoginState.LOGGED_IN,
                 service.verify(new VerifyLoginRequest(SESSION_ID, CAPTCHA, null)).state());
+        var order = inOrder(mapper, devices);
+        order.verify(mapper).completeOperation(any(), anyString());
+        order.verify(devices).remember(argThat(credentials -> TOKEN.equals(credentials.stoken())), eq(session.getDeviceId()));
         assertTrue(output.getAll().contains("LOGGED_IN"));
         assertTrue(output.getAll().contains("elapsed_ms="));
         assertFalse(output.getAll().contains(PHONE));
@@ -77,7 +82,7 @@ class ConsoleLogSafetyTest {
         when(client.call(any(), any(), anyString(), isNull())).thenThrow(error);
         MihoyoLoginServiceImpl service =
                 new MihoyoLoginServiceImpl(
-                        mapper, client, new MihoyoProperties(), Clock.systemUTC());
+                        mapper, client, new MihoyoProperties(), Clock.systemUTC(), mock(LoginDeviceBinding.class));
         assertEquals(
                 502,
                 assertThrows(

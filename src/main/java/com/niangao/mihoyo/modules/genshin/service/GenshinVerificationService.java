@@ -28,7 +28,7 @@ public class GenshinVerificationService {
         if (encrypted != null) {
             Proof proof = decode(encrypted, digest + ":genshin-proof", Proof.class);
             if (matches(request, proof.uid(), proof.region(), proof.gameBiz())) {
-                var device = devices.resolve(request.stuid(), request.mid());
+                var device = devices.resolve(request.stuid(), request.mid(), request.deviceId());
                 if (proof.deviceId().equals(device.id()) && proof.fp().equals(device.fp())) challenge = proof.challenge();
             }
         }
@@ -53,8 +53,9 @@ public class GenshinVerificationService {
         if (!"ok".equals(reserved)) throw new BusinessException("cooldown".equals(reserved) ? 429 : 409, "验证任务正在处理或请求过快，请稍候再试");
         try {
             var authorization = records.authorize(request);
-            var challenge = client.create(authorization, failure);
-            var task = new Task(failure, authorization.cookie(), authorization.device().id(), authorization.device().fp(), challenge);
+            var created = client.create(authorization, failure);
+            var challenge = created.challenge();
+            var task = new Task(failure, created.cookie(), authorization.device().id(), authorization.device().fp(), challenge);
             String encoded = cipher.encryptValue(task, digest + ":genshin-task:" + id);
             if (!"ok".equals(mapper.execute(digest, "ready", id, encoded))) throw expired();
             return new VerificationView(id, Instant.now().plusSeconds(300), challenge);

@@ -51,8 +51,12 @@ public class GenshinArchiveStorage {
             else throw new BusinessException(502, "档案响应异常，未保存");
             return value;
         } catch (RuntimeException ex) {
-            String reason = ex instanceof BusinessException business && "upstream_verification_required".equals(business.getDetails().get("reason"))
-                    ? "upstream_verification_required" : ex instanceof DataAccessException ? "storage_unavailable" : "archive_request_failed";
+            // 保留上游原因（upstream_verification_required / upstream_account_risk / upstream_rejected 等），
+            // 便于查询记录区分“需要验证”“账号风险”“其他上游拒绝”，其余统一落到 archive_request_failed。
+            String reason = ex instanceof BusinessException business
+                    && business.getDetails().get("reason") instanceof String value
+                    && value.matches("upstream_[a-z_]{1,32}") ? value
+                    : ex instanceof DataAccessException ? "storage_unavailable" : "archive_request_failed";
             Integer code = ex instanceof BusinessException business && business.getDetails().get("upstream_retcode") instanceof Number number ? number.intValue() : null;
             try { mapper.failed(run, stage, code, reason, expected); }
             catch (DataAccessException ignored) { log.warn("档案查询记录保存失败 stage={}", stage); }

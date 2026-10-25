@@ -18,12 +18,14 @@ import com.niangao.mihoyo.modules.workbench.dto.WorkbenchQuery;
 import com.niangao.mihoyo.modules.workbench.entity.WorkbenchSecret;
 import com.niangao.mihoyo.modules.workbench.service.WorkbenchSessionService;
 import com.niangao.mihoyo.modules.workbench.vo.WorkbenchSessionView;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import java.time.Duration;
+import java.util.Map;
 
 @RestController
 @Slf4j
@@ -45,6 +47,12 @@ public class WorkbenchController {
         this.archive = archive;
         this.verification = verification;
         this.storage = storage;
+    }
+
+    /** 独立健康检查：不要求登录、不访问米哈游上游、不返回敏感信息，供容器健康探测使用。 */
+    @GetMapping("/health")
+    public Result<Map<String, String>> health() {
+        return Result.success(Map.of("status", "ok"));
     }
 
     @PostMapping(value = "/session", consumes = "application/json")
@@ -79,7 +87,7 @@ public class WorkbenchController {
             @CookieValue(name = COOKIE, required = false) String token,
             @RequestHeader(name = "X-Workspace-CSRF", required = false) String csrf) {
         return Result.success(sessions.withSession(token, csrf, secret -> accounts.queryAccounts(
-                new GameAccountsRequest(secret.stoken(), secret.stuid(), secret.mid(), query.gameBiz(), null))));
+                new GameAccountsRequest(secret.stoken(), secret.stuid(), secret.mid(), query.gameBiz(), null, secret.deviceId()))));
     }
 
     @PostMapping(value = "/genshin/overview", consumes = "application/json")
@@ -138,7 +146,7 @@ public class WorkbenchController {
     }
 
     private GenshinRecordRequest recordRequest(WorkbenchSecret secret, WorkbenchQuery.Archive query) {
-        return new GenshinRecordRequest(secret.stoken(), secret.stuid(), secret.mid(), query.gameUid(), query.region(), query.gameBiz(), query.characterIds());
+        return new GenshinRecordRequest(secret.stoken(), secret.stuid(), secret.mid(), query.gameUid(), query.region(), query.gameBiz(), query.characterIds(), secret.deviceId());
     }
 
     private String cookie(String value, Duration maxAge) {
@@ -147,9 +155,17 @@ public class WorkbenchController {
     }
 
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<Result<?>> failure(BusinessException ex) {
-        log.warn("工作台接口失败 status={}, stage={}, upstream_retcode={}", ex.getStatus(),
-                ex.getDetails().getOrDefault("stage", "unspecified"), ex.getDetails().getOrDefault("upstream_retcode", "none"));
+    public ResponseEntity<Result<?>> failure(BusinessException ex, HttpServletRequest request) {
+        // 前端打开页面时用 GET /api/workbench/session 试探登录态，未登录的 401 属预期；
+        // 容器健康探测此前复用同一路径，导致每 20 秒一条告警。仅这类探测降到 DEBUG，其余业务错误仍告警。
+        boolean expectedProbe = ex.getStatus() == 401 && "GET".equals(request.getMethod())
+                && "/api/workbench/session".equals(request.getRequestURI());
+        if (expectedProbe) {
+            log.debug("工作台未登录探测 status=401, path={}", request.getRequestURI());
+        } else {
+            log.warn("工作台接口失败 status={}, stage={}, upstream_retcode={}", ex.getStatus(),
+                    ex.getDetails().getOrDefault("stage", "unspecified"), ex.getDetails().getOrDefault("upstream_retcode", "none"));
+        }
         var builder = ResponseEntity.status(ex.getStatus());
         // 旧请求的迟到 401 不得清除浏览器刚换入的新 Cookie；退出接口负责显式清除。
         return builder.body(Result.failure(ex.getStatus(), ex.getMessage(), ex.getDetails().isEmpty() ? null : ex.getDetails()));

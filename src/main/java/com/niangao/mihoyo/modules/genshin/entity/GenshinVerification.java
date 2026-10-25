@@ -9,6 +9,9 @@ public final class GenshinVerification {
     public record Challenge(String gt, String challenge, int newCaptcha, int success, boolean useV4) {
         @Override public String toString() { return "VerificationChallenge[redacted]"; }
     }
+    public record Created(Challenge challenge, String cookie) {
+        @Override public String toString() { return "VerificationCreated[redacted]"; }
+    }
     public record Task(Failure failure, String cookie, String deviceId, String fp, Challenge challenge) {
         @Override public String toString() { return "VerificationTask[redacted]"; }
     }

@@ -4,6 +4,7 @@ import com.niangao.mihoyo.common.exception.BusinessException;
 import com.niangao.mihoyo.modules.genshin.client.GenshinDeviceClient;
 import com.niangao.mihoyo.modules.genshin.mapper.GenshinDeviceMapper;
 import com.niangao.mihoyo.modules.mihoyo.config.MihoyoRedisProperties;
+import com.niangao.mihoyo.modules.mihoyo.util.DeviceIdUtil;
 import org.springframework.stereotype.Service;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -36,7 +37,14 @@ public class GenshinDeviceService {
         } catch (Exception ex) { throw new BusinessException(503, "米游社设备标识配置不可用"); }
     }
     public Device resolve(String stuid, String mid) {
-        String id = deviceId(stuid, mid);
+        return resolve(stuid, mid, null);
+    }
+    /** 旧会话和导入凭证保持原有派生设备；新登录优先使用服务端会话保存的原设备。 */
+    public String deviceId(String stuid, String mid, String savedDeviceId) {
+        return savedDeviceId == null ? deviceId(stuid, mid) : DeviceIdUtil.requireValid(savedDeviceId);
+    }
+    public Device resolve(String stuid, String mid, String savedDeviceId) {
+        String id = deviceId(stuid, mid, savedDeviceId);
         synchronized (locks[Math.floorMod(id.hashCode(), locks.length)]) {
             String fp = mapper.find(id);
             if (fp == null) fp = mapper.saveIfAbsent(id, client.fetch(id));

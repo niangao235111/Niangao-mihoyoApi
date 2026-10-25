@@ -3,6 +3,8 @@ package com.niangao.mihoyo.modules.workbench.service;
 import com.niangao.mihoyo.common.exception.BusinessException;
 import com.niangao.mihoyo.modules.mihoyo.dto.GameAccountsRequest;
 import com.niangao.mihoyo.modules.mihoyo.service.MihoyoGameAccountService;
+import com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding;
+import com.niangao.mihoyo.modules.genshin.service.GenshinDeviceService;
 import com.niangao.mihoyo.modules.workbench.entity.WorkbenchSecret;
 import com.niangao.mihoyo.modules.workbench.mapper.WorkbenchSessionMapper;
 import com.niangao.mihoyo.modules.workbench.mapper.WorkbenchSessionMapper.Stored;
@@ -17,17 +19,23 @@ import java.time.Instant;
 import java.util.*;
 import java.util.function.Function;
 
+@lombok.extern.slf4j.Slf4j
 @Service
 public class WorkbenchSessionService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final WorkbenchSessionMapper mapper;
     private final WorkbenchCipher cipher;
     private final MihoyoGameAccountService accounts;
+    private final LoginDeviceBinding loginDevices;
+    private final GenshinDeviceService devices;
 
-    public WorkbenchSessionService(WorkbenchSessionMapper mapper, WorkbenchCipher cipher, MihoyoGameAccountService accounts) {
+    public WorkbenchSessionService(WorkbenchSessionMapper mapper, WorkbenchCipher cipher, MihoyoGameAccountService accounts,
+            LoginDeviceBinding loginDevices, GenshinDeviceService devices) {
         this.mapper = mapper;
         this.cipher = cipher;
         this.accounts = accounts;
+        this.loginDevices = loginDevices;
+        this.devices = devices;
     }
 
     public record Issued(String token, WorkbenchSessionView view) {
@@ -38,14 +46,17 @@ public class WorkbenchSessionService {
     public Issued create(GameAccountsRequest input, String previousToken) {
         cipher.requireConfigured();
         // 不接受筛选参数作为会话状态；从上游核验并保存全部关联角色的快照。
-        var result = accounts.queryAccounts(new GameAccountsRequest(input.stoken(), input.stuid(), input.mid(), null, null));
-        WorkbenchSecret secret = new WorkbenchSecret(input.stoken(), input.stuid(), input.mid(), List.copyOf(result.list()));
+        String loginDevice = loginDevices.find(input.stoken(), input.stuid(), input.mid());
+        String device = devices.deviceId(input.stuid(), input.mid(), loginDevice);
+        var result = accounts.queryAccounts(new GameAccountsRequest(input.stoken(), input.stuid(), input.mid(), null, null, device));
+        WorkbenchSecret secret = new WorkbenchSecret(input.stoken(), input.stuid(), input.mid(), List.copyOf(result.list()), device);
         String token = random(), digest = digest(token), csrf = random();
         Stored stored = mapper.insert(digest, cipher.encrypt(secret, digest), csrf);
         if (stored == null) throw new BusinessException(503, "工作台会话创建失败，请重试");
         // 成功换入新会话后，旧会话不再可用；清理失败则不把新会话交给浏览器。
         try { if (validToken(previousToken)) mapper.delete(digest(previousToken)); }
         catch (RuntimeException ex) { mapper.delete(digest); throw ex; }
+        log.info("工作台设备上下文已保存 source={}", loginDevice == null ? "legacy_fallback" : "login");
         return new Issued(token, view(secret, stored));
     }
 

@@ -395,8 +395,8 @@ class LoginSessionMapperTest {
                         })
                 .when(client)
                 .call(any(LoginSession.class), eq(LoginOperation.SMS), isNull(), isNull());
-        var serviceA = new MihoyoLoginServiceImpl(first, client, properties, Clock.systemUTC());
-        var serviceB = new MihoyoLoginServiceImpl(second, client, properties, Clock.systemUTC());
+        var serviceA = new MihoyoLoginServiceImpl(first, client, properties, Clock.systemUTC(), org.mockito.Mockito.mock(com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding.class));
+        var serviceB = new MihoyoLoginServiceImpl(second, client, properties, Clock.systemUTC(), org.mockito.Mockito.mock(com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding.class));
         LoginSession original = create("13900000000");
         var executor = Executors.newSingleThreadExecutor();
         try {
@@ -432,7 +432,7 @@ class LoginSessionMapperTest {
                         .getAsJsonObject());
         when(client.call(any(LoginSession.class), eq(LoginOperation.LOGIN), eq("012345"), isNull()))
                 .thenReturn(reply);
-        var service = new MihoyoLoginServiceImpl(first, client, properties, Clock.systemUTC());
+        var service = new MihoyoLoginServiceImpl(first, client, properties, Clock.systemUTC(), org.mockito.Mockito.mock(com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding.class));
         LoginSession session = sent(claim(second, create("13900000000")));
         assertEquals(
                 "test-sensitive-stoken",
@@ -475,7 +475,7 @@ class LoginSessionMapperTest {
         MihoyoPassportClient client = mock(MihoyoPassportClient.class);
         when(client.call(any(LoginSession.class), eq(LoginOperation.SMS), isNull(), isNull()))
                 .thenThrow(new BusinessException(502, "模拟网络结果不明"));
-        var service = new MihoyoLoginServiceImpl(first, client, properties, Clock.systemUTC());
+        var service = new MihoyoLoginServiceImpl(first, client, properties, Clock.systemUTC(), org.mockito.Mockito.mock(com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding.class));
         LoginSession original = create("13900000000");
         assertEquals(
                 502,
@@ -509,7 +509,7 @@ class LoginSessionMapperTest {
                                             .getAsJsonObject());
                             return reply;
                         });
-        var service = new MihoyoLoginServiceImpl(first, client, properties, Clock.systemUTC());
+        var service = new MihoyoLoginServiceImpl(first, client, properties, Clock.systemUTC(), org.mockito.Mockito.mock(com.niangao.mihoyo.modules.mihoyo.service.LoginDeviceBinding.class));
         assertEquals(
                 410,
                 assertThrows(

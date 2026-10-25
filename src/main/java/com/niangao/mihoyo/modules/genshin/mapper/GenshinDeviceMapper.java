@@ -17,7 +17,7 @@ public class GenshinDeviceMapper {
         this.redis = redis; this.settings = settings;
     }
     private String key(String deviceId) {
-        if (deviceId == null || !deviceId.matches("[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}")) throw new IllegalArgumentException("Invalid device ID");
+        com.niangao.mihoyo.modules.mihoyo.util.DeviceIdUtil.requireValid(deviceId);
         return settings.getKeyPrefix() + ":genshin:fp:" + deviceId;
     }
     public String find(String deviceId) {

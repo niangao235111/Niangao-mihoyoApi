@@ -41,6 +41,7 @@ class GenshinArchiveIntegrationTest {
     static final AtomicInteger CREATE_CALLS = new AtomicInteger(), VERIFY_CALLS = new AtomicInteger();
     static final String PREFIX = "niangao:test:archive:" + UUID.randomUUID();
     static final Set<String> RECORD_DEVICES = ConcurrentHashMap.newKeySet();
+    static final Set<String> ALL_DEVICES = ConcurrentHashMap.newKeySet();
     static volatile String mode = "normal";
     static volatile String recordRegion = "cn_gf01", recordUid = "123456789";
     static final String BODY = """
@@ -57,14 +58,21 @@ class GenshinArchiveIntegrationTest {
                     String path = exchange.getRequestURI().getPath();
                     String cookie = exchange.getRequestHeaders().getFirst("Cookie");
                     String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                    String deviceHeader = exchange.getRequestHeaders().getFirst("x-rpc-device_id");
+                    if (deviceHeader != null) ALL_DEVICES.add(deviceHeader);
                     if (path.equals("/device-fp/api/getFp")) {
                         FP_CALLS.incrementAndGet();
                         assertNull(cookie, "设备指纹申请不得发送用户 Cookie");
                         var payload = JsonParser.parseString(body).getAsJsonObject();
+                        ALL_DEVICES.add(payload.get("device_id").getAsString());
                         assertEquals("4", payload.get("platform").getAsString());
                         assertTrue(JsonParser.parseString(payload.get("ext_fields").getAsString()).getAsJsonObject().has("userAgent"));
                         assertFalse(body.contains("fixture-stoken")); assertFalse(body.contains("fixture-mid"));
                         data = mode.equals("fp_failure") ? "{\"code\":403,\"device_fp\":\"\"}" : "{\"code\":200,\"device_fp\":\"fixture-device-fp\"}";
+                    } else if (path.equals("/account/ma-cn-verifier/verifier/createLoginCaptcha")) {
+                        data = "{\"action_type\":\"login\",\"sent_new\":true,\"countdown\":60}";
+                    } else if (path.equals("/account/ma-cn-passport/app/loginByMobileCaptcha")) {
+                        data = "{\"stoken\":\"fixture-stoken\",\"user_info\":{\"aid\":\"123\",\"mid\":\"fixture-mid\"}}";
                     } else if (path.equals("/account/auth/api/getLTokenBySToken")) {
                         assertTrue(cookie.contains("stoken=fixture-stoken"));
                         data = "{\"ltoken\":\"fixture-ltoken\"}";
@@ -81,12 +89,14 @@ class GenshinArchiveIntegrationTest {
                         assertTrue(cookie.contains("ltoken_v2=fixture-ltoken"));
                         assertFalse(cookie.contains("stoken="));
                         String[] ds = exchange.getRequestHeaders().getFirst("DS").split(",");
-                        assertEquals(3, ds.length, "DS v2 required");
+                        assertEquals(3, ds.length);
                         String query = exchange.getRequestURI().getRawQuery();
                         String canonical = query == null ? "" : String.join("&", Arrays.stream(query.split("&")).sorted().toList());
-                        String signed = "salt=xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs&t=" + ds[0] + "&r=" + ds[1] + "&b=" + body + "&q=" + canonical;
+                        String signed = verification
+                                ? "salt=h8w582wxwgqvahcdkpvdhbh2w9casgfl&t=" + ds[0] + "&r=" + ds[1]
+                                : "salt=xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs&t=" + ds[0] + "&r=" + ds[1] + "&b=" + body + "&q=" + canonical;
                         assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("MD5").digest(signed.getBytes(StandardCharsets.UTF_8))), ds[2]);
-                        assertEquals("2.11.1", exchange.getRequestHeaders().getFirst("x-rpc-app_version"));
+                        assertEquals(verification ? "2.3.0" : "2.11.1", exchange.getRequestHeaders().getFirst("x-rpc-app_version"));
                         assertEquals("fixture-device-fp", exchange.getRequestHeaders().getFirst("x-rpc-device_fp"));
                         assertEquals("5", exchange.getRequestHeaders().getFirst("x-rpc-client_type"));
                         assertEquals("https://webstatic.mihoyo.com", exchange.getRequestHeaders().getFirst("Origin"));
@@ -96,6 +106,8 @@ class GenshinArchiveIntegrationTest {
                         RECORD_DEVICES.add(exchange.getRequestHeaders().getFirst("x-rpc-device_id"));
                         exchange.getResponseHeaders().set("x-trace-id", "fixture-record-trace");
                         if (verification) {
+                            assertTrue(path.startsWith("/game_record/card/wapi/"), "网页验证不能复用 App 战绩路径");
+                            assertTrue(ds[1].matches("[a-z0-9]{6}"));
                             assertEquals("2", exchange.getRequestHeaders().getFirst("x-rpc-challenge_game"));
                             assertEquals("/genshin/api/index", exchange.getRequestHeaders().getFirst("x-rpc-challenge_path"));
                             assertEquals("fixture-record-trace", exchange.getRequestHeaders().getFirst("x-rpc-challenge_trace"));
@@ -110,15 +122,18 @@ class GenshinArchiveIntegrationTest {
                         }
                         if (path.endsWith("/createVerification")) {
                             CREATE_CALLS.incrementAndGet(); assertEquals("GET", exchange.getRequestMethod());
+                            assertFalse(cookie.contains("verification_session="), "其他任务的会话 Cookie 不得进入新任务");
+                            exchange.getResponseHeaders().add("Set-Cookie", "verification_session=fixture-task-session; Path=/game_record/card/wapi; HttpOnly");
                             assertEquals("is_high=true", query);
                             data = "{\"gt\":\"fixture-gt\",\"challenge\":\"fixture-challenge\",\"new_captcha\":1,\"success\":1}";
                         } else if (path.endsWith("/verifyVerification")) {
                             VERIFY_CALLS.incrementAndGet(); assertEquals("POST", exchange.getRequestMethod());
+                            assertTrue(cookie.contains("verification_session=fixture-task-session"), "必须携带创建任务时上游设置的 Cookie");
                             var proof = JsonParser.parseString(body).getAsJsonObject();
                             assertEquals(Set.of("geetest_challenge", "geetest_validate", "geetest_seccode"), proof.keySet());
                             assertEquals("fixture-validate", proof.get("geetest_validate").getAsString());
                             data = "{\"challenge\":\"fixture-approved\"}";
-                            if (mode.equals("verification_reject")) retcode = -1;
+                            if (mode.equals("verification_reject")) retcode = 10306;
                         } else if (path.endsWith("/index")) {
                             assertEquals("GET", exchange.getRequestMethod());
                             assertTrue(exchange.getRequestURI().getQuery().contains("role_id=" + recordUid));
@@ -181,11 +196,12 @@ class GenshinArchiveIntegrationTest {
     @Autowired StringRedisTemplate redis;
     @Autowired GenshinDeviceService devices;
     @Autowired WorkbenchSessionMapper sessions;
+    @Autowired com.niangao.mihoyo.modules.mihoyo.service.MihoyoLoginService logins;
     final Set<String> sessionDigests = new HashSet<>();
     String cookie, csrf;
     static final String SELECTOR = "{\"game_uid\":\"123456789\",\"game_biz\":\"hk4e_cn\",\"region\":\"cn_gf01\"}";
     final HttpClient http = HttpClient.newHttpClient();
-    @BeforeEach void reset() { mode = "normal"; recordRegion = "cn_gf01"; recordUid = "123456789"; ERRORS.clear(); RECORD_CALLS.set(0); FP_CALLS.set(0); CREATE_CALLS.set(0); VERIFY_CALLS.set(0); RECORD_DEVICES.clear(); }
+    @BeforeEach void reset() { mode = "normal"; recordRegion = "cn_gf01"; recordUid = "123456789"; ERRORS.clear(); RECORD_CALLS.set(0); FP_CALLS.set(0); CREATE_CALLS.set(0); VERIFY_CALLS.set(0); RECORD_DEVICES.clear(); ALL_DEVICES.clear(); }
     @AfterEach void checkUpstream() {
         try { assertTrue(ERRORS.isEmpty(), () -> "Upstream fixture assertions: " + ERRORS); }
         finally { redis.delete(PREFIX + ":genshin:fp:" + devices.deviceId("123", "fixture-mid")); sessionDigests.forEach(sessions::delete); }
@@ -237,6 +253,35 @@ class GenshinArchiveIntegrationTest {
         return "{\"verification_id\":\"" + id + "\",\"geetest_challenge\":\"" + challenge
                 + "\",\"geetest_validate\":\"fixture-validate\",\"geetest_seccode\":\"fixture-seccode\"}";
     }
+    @Test void smsLoginRestoreArchiveAndManualVerificationKeepExactlyTheSameDevice() throws Exception {
+        var flow = logins.start(new com.niangao.mihoyo.modules.mihoyo.dto.StartLoginRequest("13800000000", "+86"));
+        try {
+            logins.sendSms(new com.niangao.mihoyo.modules.mihoyo.dto.SendSmsRequest(flow.sessionId(), null));
+            var result = logins.verify(new com.niangao.mihoyo.modules.mihoyo.dto.VerifyLoginRequest(flow.sessionId(), "123456", null));
+            assertEquals("fixture-stoken", result.credentials().stoken());
+            assertEquals(1, ALL_DEVICES.size());
+            String originalDevice = ALL_DEVICES.iterator().next();
+            assertEquals(53, originalDevice.length());
+            login();
+            // 在进入战绩前模拟浏览器刷新与重新查询账号，仍只能沿用同一设备。
+            var restored = workbench("/session", null);
+            assertEquals(200, restored.statusCode());
+            assertFalse(restored.body().contains(originalDevice));
+            assertEquals(200, workbench("/game/accounts", "{}").statusCode());
+            String task = startTask();
+            assertEquals(200, workbench("/genshin/verification/submit", proof(task, "fixture-challenge")).statusCode());
+            assertEquals(200, workbench("/genshin/overview", SELECTOR).statusCode());
+            assertEquals(Set.of(originalDevice), ALL_DEVICES,
+                    "短信、登录、LToken、角色、指纹、任务创建/提交和放行查询必须使用原设备");
+            assertEquals(Set.of(originalDevice), RECORD_DEVICES);
+        } finally {
+            logins.delete(new com.niangao.mihoyo.modules.mihoyo.dto.SessionRequest(flow.sessionId()));
+            // 仅清理本测试随机命名空间内的短期设备交接记录与指纹。
+            var handoffs = redis.keys(PREFIX + ":login-device:*");
+            if (handoffs != null && !handoffs.isEmpty()) redis.delete(handoffs);
+            for (String device : ALL_DEVICES) redis.delete(PREFIX + ":genshin:fp:" + device);
+        }
+    }
     @Test void manualVerificationHttpRoundTripRetriesArchiveAndCannotReplay() throws Exception {
         login(); String id = startTask();
         String digest = WorkbenchSessionService.digest(cookie.substring(cookie.indexOf('=') + 1));
@@ -280,7 +325,10 @@ class GenshinArchiveIntegrationTest {
     }
     @Test void rejectedCaptchaDoesNotRetryOrRevokeLogin() throws Exception {
         login(); String id = startTask(); mode = "verification_reject";
-        assertEquals(422, workbench("/genshin/verification/submit", proof(id, "fixture-challenge")).statusCode());
+        var rejected = workbench("/genshin/verification/submit", proof(id, "fixture-challenge"));
+        assertEquals(422, rejected.statusCode());
+        assertTrue(rejected.body().contains("10306"));
+        assertEquals(422, workbench("/genshin/overview", SELECTOR).statusCode(), "拒绝后不得写入放行凭证");
         assertEquals(410, workbench("/genshin/verification/submit", proof(id, "fixture-challenge")).statusCode());
         assertEquals(429, workbench("/genshin/verification/start", SELECTOR).statusCode());
         assertEquals(1, VERIFY_CALLS.get()); assertEquals(200, workbench("/session", null).statusCode());
@@ -338,9 +386,17 @@ class GenshinArchiveIntegrationTest {
         var response = post("overview", BODY); assertEquals(422, response.statusCode());
         var result = mapper.readTree(response.body());
         assertEquals(5003, result.path("data").path("upstream_retcode").asInt());
-        assertEquals("upstream_verification_required", result.path("data").path("reason").asText());
-        assertTrue(result.path("message").asText().contains("设备风控"));
+        // 官方网页把 5003 视为账号风险并直接提示，只有 1034 才会弹极验，因此这里不能再标记为需要验证。
+        assertEquals("upstream_account_risk", result.path("data").path("reason").asText());
+        assertTrue(result.path("message").asText().contains("账号存在风险"));
         assertFalse(response.body().contains("fixture-ltoken")); assertEquals(1, RECORD_CALLS.get());
+    }
+    @Test void risk1034StillAsksForVerification() throws Exception {
+        mode = "risk";
+        var response = post("overview", BODY); assertEquals(422, response.statusCode());
+        var result = mapper.readTree(response.body());
+        assertEquals(1034, result.path("data").path("upstream_retcode").asInt());
+        assertEquals("upstream_verification_required", result.path("data").path("reason").asText());
     }
     @Test void failedFingerprintNeverFallsBackToInventedFingerprintOrCallsRecord() throws Exception {
         mode = "fp_failure"; var response = post("overview", BODY);
