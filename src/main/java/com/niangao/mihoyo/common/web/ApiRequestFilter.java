@@ -42,11 +42,13 @@ public class ApiRequestFilter extends OncePerRequestFilter {
         response.setHeader("Cache-Control", "no-store");
         response.setHeader("X-Content-Type-Options", "nosniff");
         response.setHeader("Referrer-Policy", "no-referrer");
-        byte[] body = request.getInputStream().readNBytes(MAX_BODY_BYTES + 1);
-        if (body.length > MAX_BODY_BYTES) {
+        int max = "POST".equals(request.getMethod()) && "/api/workbench/genshin/wishes/import".equals(request.getRequestURI())
+                ? 5 * 1024 * 1024 : MAX_BODY_BYTES;
+        byte[] body = request.getInputStream().readNBytes(max + 1);
+        if (body.length > max) {
             response.setStatus(413);
             response.setContentType("application/json; charset=utf-8");
-            objectMapper.writeValue(response.getWriter(), Result.failure(413, "请求体超过 16 KB"));
+            objectMapper.writeValue(response.getWriter(), Result.failure(413, max == MAX_BODY_BYTES ? "请求体超过 16 KB" : "导入请求体超过 5 MiB"));
             return;
         }
         chain.doFilter(

@@ -51,11 +51,17 @@ mihoyo:
 
 # Spring Boot 默认控制台输出；业务日志 INFO，轮询与上游请求阶段 DEBUG。
 logging:
+  file:
+    name: ${APP_LOG_FILE:${user.dir}/.local/backend.log}
   level:
     com.niangao.mihoyo: ${APP_LOG_LEVEL:INFO}
 
 # 原神战绩：网页仅调用本站 /api/genshin/*，不接触上游 Cookie 和签名。
 genshin:
+  wishes:
+    auth-app-version: ${GENSHIN_WISH_AUTH_APP_VERSION:2.71.1}
+    auth-ds-salt: ${GENSHIN_WISH_AUTH_DS_SALT:EJncUPGnOHajenjLhBOsdpwEMZmiCmQX}
+    page-delay-ms: ${GENSHIN_WISH_PAGE_DELAY_MS:750}
   storage:
     enabled: true
   record-endpoint: https://api-takumi-record.mihoyo.com

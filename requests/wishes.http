@@ -1,0 +1,45 @@
+### 先建立工作台会话，替换占位值；无真实凭证。
+@base = http://127.0.0.1:17892
+@csrf = replace-workbench-csrf
+@cookie = replace-workbench-cookie
+@task = 00000000-0000-4000-8000-000000000000
+
+### 启动后台同步；HTTP 202
+POST {{base}}/api/workbench/genshin/wishes/sync
+Content-Type: application/json
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"role":{"game_uid":"500000001","region":"cn_qd01","game_biz":"hk4e_cn"}}
+
+### 查询进度（取消时将路径改为 /sync/cancel）
+POST {{base}}/api/workbench/genshin/wishes/sync/status
+Content-Type: application/json
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"role":{"game_uid":"500000001","region":"cn_qd01","game_biz":"hk4e_cn"},"task_id":"{{task}}"}
+
+### 已保存统计（导出时将路径改为 /export）
+POST {{base}}/api/workbench/genshin/wishes/summary
+Content-Type: application/json
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"game_uid":"500000001","region":"cn_qd01","game_biz":"hk4e_cn"}
+
+### 明细；下一页 before_id 使用 next_id
+POST {{base}}/api/workbench/genshin/wishes/records
+Content-Type: application/json
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"role":{"game_uid":"500000001","region":"cn_qd01","game_biz":"hk4e_cn"},"pool":"301","limit":50}
+
+### 导入示例（空文件不增加抽数）
+POST {{base}}/api/workbench/genshin/wishes/import
+Content-Type: application/json
+Cookie: ng_workbench={{cookie}}
+X-Workspace-CSRF: {{csrf}}
+
+{"role":{"game_uid":"500000001","region":"cn_qd01","game_biz":"hk4e_cn"},"document":{"info":{"version":"v4.2"},"hk4e":[{"uid":"500000001","timezone":8,"list":[]}]}}
